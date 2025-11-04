@@ -1,0 +1,102 @@
+/**
+ * SMSService for Accounting backend.
+ * Mirrors the server project's Magfa integration with safe fallbacks.
+ * - If Magfa env vars exist, sends via Magfa HTTP API using native fetch.
+ * - Otherwise logs the SMS content for development/testing.
+ * - Formats Iranian numbers (09xxxxxxxxx -> 989xxxxxxxxx) for Magfa.
+ */
+import dotenv from 'dotenv';
+dotenv.config();
+
+interface SendResult {
+  success: boolean;
+  message?: string;
+  messageId?: string;
+  error?: string;
+}
+
+export class SMSService {
+  private baseURL: string;
+  private username?: string;
+  private password?: string;
+  private domain?: string;
+
+  constructor() {
+    this.baseURL = process.env.MAGFA_SMS_BASE_URL || 'https://sms.magfa.com/api/http/sms/v2/send';
+    this.username = process.env.MAGFA_USERNAME;
+    this.password = process.env.MAGFA_PASSWORD;
+    this.domain = process.env.MAGFA_DOMAIN;
+  }
+
+  /**
+   * Format a local Iranian mobile (e.g., 09xxxxxxxxx) to Magfa format 989xxxxxxxxx.
+   */
+  private formatIranMobile(mobile: string): string {
+    let formatted = mobile.replace(/[^0-9]/g, '');
+    if (formatted.startsWith('0')) {
+      formatted = '98' + formatted.slice(1);
+    }
+    return formatted;
+  }
+
+  /**
+   * Send a generic SMS message using Magfa when configured, otherwise log.
+   */
+  async sendSMS(recipient: string, message: string): Promise<SendResult> {
+    const formattedRecipient = this.formatIranMobile(recipient);
+
+    // If Magfa credentials are not set, log and return success in dev.
+    if (!this.username || !this.password || !this.domain) {
+      console.log('[DEV SMS] To:', formattedRecipient, '\nMessage:', message);
+      return { success: true, message: 'SMS logged (development mode)' };
+    }
+
+    try {
+      const authUser = `${this.username}/magfa`;
+      const authHeader = Buffer.from(`${authUser}:${this.password}`).toString('base64');
+
+      const resp = await fetch(this.baseURL, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${authHeader}`,
+        },
+        body: JSON.stringify({
+          senders: [this.domain],
+          messages: [message],
+          recipients: [formattedRecipient],
+        }),
+      });
+
+      const data = await resp.json().catch(() => null);
+      console.log('[Magfa API Response]', data);
+
+      if (resp.ok && data && data.status === 0) {
+        const msg0 = data.messages && data.messages.length > 0 ? data.messages[0] : null;
+        if (msg0 && msg0.status === 0) {
+          return { success: true, message: 'SMS queued successfully', messageId: msg0.messageId };
+        }
+        const messageStatus = msg0 ? msg0.status : 'N/A';
+        const messageError = msg0 ? msg0.message : 'N/A';
+        return { success: false, error: `Magfa message status not 0. Status: ${messageStatus}, Error: ${messageError}` };
+      }
+
+      return { success: false, error: (data && data.message) || 'Failed to send SMS' };
+    } catch (err: any) {
+      console.error('SMS sending error:', err?.message || err);
+      return { success: false, error: err?.message || 'Unknown SMS error' };
+    }
+  }
+
+  /**
+   * Send an OTP message in Persian with validity notice.
+   */
+  async sendOtp(mobileNumber: string, otp: string): Promise<SendResult> {
+    const message = `کد تایید شما در گرین بانچ: ${otp}\nاین کد تا ۲ دقیقه دیگر معتبر است.`;
+    console.log(`[SMS] Sending OTP to ${mobileNumber} with code: ${otp}`);
+    return this.sendSMS(mobileNumber, message);
+  }
+}
+
+export const smsService = new SMSService();

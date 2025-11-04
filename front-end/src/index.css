@@ -1,0 +1,169 @@
+@import url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css');
+
+/* Vazirmatn Persian font for Farsi */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.fa-font, [lang="fa"] {
+  font-family: 'Vazirmatn', 'IranSans', 'Yekan Bakh', 'Sahel', 'Shabnam', 'Arial', sans-serif !important;
+}
+
+.rtl-text { text-align: right; }
+.ltr-text { text-align: left; }
+
+/* Login page specific styles */
+.login-page {
+  font-size: 18px !important;
+  color: white !important;
+}
+
+.login-page * {
+  font-family: 'Vazirmatn', 'Roboto', 'Helvetica', 'Arial', sans-serif !important;
+}
+
+/* Apply white color to ALL text elements on login page */
+.login-page,
+.login-page *,
+.login-page h1,
+.login-page h2,
+.login-page h3,
+.login-page p,
+.login-page label,
+.login-page span,
+.login-page div {
+  color: white !important;
+}
+
+/* Override all Tailwind text color classes with white */
+.login-page .text-gray-600,
+.login-page .text-gray-700,
+.login-page .text-gray-800,
+.login-page .text-gray-900,
+.login-page .text-black,
+.login-page .text-slate-600,
+.login-page .text-slate-700,
+.login-page .text-slate-800,
+.login-page .text-slate-900 {
+  color: white !important;
+}
+
+/* Keep form container and its contents with appropriate colors */
+.login-page .bg-white {
+  background-color: #ffffff !important;
+}
+
+.login-page .bg-white,
+.login-page .bg-white *,
+.login-page .bg-white h1,
+.login-page .bg-white h2,
+.login-page .bg-white h3,
+.login-page .bg-white p,
+.login-page .bg-white label,
+.login-page .bg-white span,
+.login-page .bg-white div {
+  color: #111827 !important; /* Dark text for readability on white background */
+}
+
+/* Exception: Keep buttons with white text and theme colors */
+.login-page button,
+.login-page .bg-white button {
+  color: white !important;
+  background-color: var(--gb-button-primary-bg) !important;
+  font-size: 16px !important;
+  font-weight: 500 !important;
+}
+
+.login-page button:hover:not(:disabled),
+.login-page .bg-white button:hover:not(:disabled) {
+  background-color: var(--gb-button-primary-hover) !important;
+}
+
+.login-page input {
+  font-size: 16px !important;
+  color: #111827 !important;
+  background-color: #ffffff !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+}
+
+/* Ensure input and button containers have same width and alignment */
+.login-page .bg-white > div {
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.login-page .bg-white input,
+.login-page .bg-white button {
+  width: 100% !important;
+  box-sizing: border-box !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.login-page button {
+  font-size: 16px !important;
+  border: none !important;
+}
+
+.login-page .text-sm {
+  font-size: 16px !important;
+}
+
+/* Specific styling for bottom links */
+.login-page .bg-white .text-sm button {
+  font-size: 16px !important;
+}
+
+.table-header {
+  background-color: var(--gb-primary-main) !important;
+  color: white !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 10 !important;
+}
+
+/* Common button class for consistent styling across the application */
+.gb-button { display: flex; justify-content: center; align-items: center; padding: 0.5rem 1rem; border: 1px solid transparent; border-radius: 0.375rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); font-size: 0.875rem; font-weight: 500; color: white; transition: background-color 0.2s ease-in-out; cursor: pointer; }
+.gb-button:disabled { opacity: 0.7; cursor: not-allowed; }
+.gb-button-primary { background-color: var(--gb-button-primary-bg); }
+.gb-button-primary:hover:not(:disabled) { background-color: var(--gb-button-primary-hover); }
+.gb-button-secondary { background-color: #FF8C32; }
+.gb-button-secondary:hover:not(:disabled) { background-color: #CC6E28; }
+.gb-button-info { background-color: #2196F3; }
+.gb-button-info:hover:not(:disabled) { background-color: #1976D2; }
+
+.gb-tab-button { display: flex; align-items: center; padding: 1rem 0.25rem; border-bottom-width: 2px; font-size: 0.875rem; font-weight: 500; transition: all 0.2s ease-in-out; cursor: pointer; white-space: nowrap; }
+.gb-tab-button-active { border-bottom-color: var(--gb-primary-main); color: var(--gb-primary-main); }
+.gb-tab-button-inactive { border-bottom-color: transparent; color: #6B7280; }
+.gb-tab-button-inactive:hover { color: #374151; border-bottom-color: #D1D5DB; }
+
+/* Full-width layout */
+html, body, #root { width: 100%; height: 100%; }
+body { margin: 0; }
+html { font-size: 17px; }
+.container { max-width: 100% !important; padding-left: 0 !important; padding-right: 0 !important; }
+.max-w-7xl { max-width: 100% !important; }
+
+/* Navbar consistency styles */
+nav * {
+  box-sizing: border-box;
+}
+
+/* Ensure consistent text rendering for navbar elements */
+nav button, nav a {
+  line-height: 1.5 !important;
+  vertical-align: middle;
+}
+
+/* Remove borders from all navbar buttons */
+nav button {
+  border: none !important;
+  outline: none !important;
+}
+
+nav button:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}

@@ -1,0 +1,75 @@
+{
+  "app": {
+    "title": "حسابداری",
+    "lang": {
+      "fa": "فارسی",
+      "en": "انگلیسی"
+    },
+    "switchLang": "تغییر زبان"
+  },
+  "common": {
+    "save": "ذخیره",
+    "cancel": "لغو",
+    "close": "بستن",
+    "delete": "حذف",
+    "edit": "ویرایش",
+    "loading": "در حال بارگذاری...",
+    "error": "خطا",
+    "success": "موفقیت",
+    "search": "جستجو",
+    "noData": "داده‌ای وجود ندارد",
+    "yes": "بله",
+    "no": "خیر",
+    "all": "همه",
+    "status": "وضعیت",
+    "currency": "ریال"
+  },
+  "health": {
+    "title": "سلامت سرویس",
+    "message": "پیام سلامت"
+  },
+  "fetch": {
+    "error": "دریافت وضعیت سلامت ناموفق بود"
+  },
+  "auth": {
+    "title": "ورود",
+    "enter_mobile": "وارد کردن شماره موبایل",
+    "mobile_placeholder": "09xxxxxxxxx",
+    "send_code": "ارسال کد",
+    "sending": "در حال ارسال…",
+    "code_sent": "کد به {mobile} ارسال شد",
+    "enter_code": "وارد کردن کد",
+    "verify": "تایید",
+    "verifying": "در حال تایید…",
+    "resend": "ارسال مجدد",
+    "resend_in": "ارسال مجدد در {s} ثانیه",
+    "change_number": "تغییر شماره",
+    "invalid_mobile": "شماره موبایل نامعتبر است",
+    "invalid_code": "کد نامعتبر است",
+    "request_failed": "خطا در ارسال درخواست",
+    "verify_failed": "خطا در تایید کد",
+    "username": "نام کاربری",
+    "mobileNumber": "شماره موبایل"
+  },
+  "navigation": {
+    "login": "ورود",
+    "profile": "پروفایل",
+    "logout": "خروج"
+  },
+  "actions": {
+    "reset": "بازنشانی",
+    "close": "بستن",
+    "change": "تغییر",
+    "remove": "حذف",
+    "create": "ایجاد",
+    "saving": "در حال ذخیره...",
+    "back": "بازگشت",
+    "apply": "اعمال",
+    "confirm": "تایید",
+    "cancel": "لغو",
+    "edit": "ویرایش"
+  },
+  "validation": {
+    "noItems": "هیچ آیتمی برای ارسال وجود ندارد"
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "app": {
+    "title": "Accounting",
+    "lang": {
+      "fa": "Farsi",
+      "en": "English"
+    },
+    "switchLang": "Switch Language"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "delete": "Delete",
+    "edit": "Edit",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "search": "Search",
+    "noData": "No data",
+    "yes": "Yes",
+    "no": "No",
+    "all": "All",
+    "status": "Status",
+    "currency": "Rial"
+  },
+  "health": {
+    "title": "Service Health",
+    "message": "Health message"
+  },
+  "fetch": {
+    "error": "Failed to fetch health status"
+  },
+  "auth": {
+    "title": "Login",
+    "enter_mobile": "Enter mobile number",
+    "mobile_placeholder": "09xxxxxxxxx",
+    "send_code": "Send code",
+    "sending": "Sending…",
+    "code_sent": "Code sent to {mobile}",
+    "enter_code": "Enter code",
+    "verify": "Verify",
+    "verifying": "Verifying…",
+    "resend": "Resend",
+    "resend_in": "Resend in {s}s",
+    "change_number": "Change number",
+    "invalid_mobile": "Invalid mobile number",
+    "invalid_code": "Invalid code",
+    "request_failed": "Request failed",
+    "verify_failed": "Verification failed",
+    "username": "Username",
+    "mobileNumber": "Mobile Number"
+  },
+  "navigation": {
+    "login": "Login",
+    "profile": "Profile",
+    "logout": "Logout"
+  },
+  "actions": {
+    "reset": "Reset",
+    "close": "Close",
+    "change": "Change",
+    "remove": "Remove",
+    "create": "Create",
+    "saving": "Saving...",
+    "back": "Back",
+    "apply": "Apply",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "edit": "Edit"
+  },
+  "validation": {
+    "noItems": "No items to submit"
+  }
+}
