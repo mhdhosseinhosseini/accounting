@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect } from 'react';
-import { applyDir, type Lang, i18n } from '../i18n';
+import { type Lang, i18n } from '../i18n';
 
 // Theme configuration matching admin project
 export const themeConfig = {
@@ -74,15 +74,10 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const [currentLang, setCurrentLang] = React.useState<Lang>(() => i18n.language as Lang);
   const isRtl = currentLang === 'fa';
 
+  /**
+   * Inject CSS custom properties once on mount.
+   */
   useEffect(() => {
-    // Apply direction and language to document
-    applyDir(currentLang);
-    
-    // Apply font family based on direction
-    const fontFamily = isRtl ? themeConfig.fonts.rtl : themeConfig.fonts.ltr;
-    document.documentElement.style.fontFamily = fontFamily;
-
-    // Inject CSS custom properties for centralized color management
     const root = document.documentElement;
     root.style.setProperty('--gb-primary-main', themeConfig.colors.primary.main);
     root.style.setProperty('--gb-primary-dark', themeConfig.colors.primary.dark);
@@ -94,45 +89,29 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     root.style.setProperty('--gb-green-dark', themeConfig.colors['gb-green-dark']);
     root.style.setProperty('--gb-orange', themeConfig.colors['gb-orange']);
     root.style.setProperty('--gb-pink', themeConfig.colors['gb-pink']);
-    
-    // Button colors
     root.style.setProperty('--gb-button-primary-bg', themeConfig.buttons.primary.backgroundColor);
     root.style.setProperty('--gb-button-primary-hover', themeConfig.buttons.primary.hoverBackgroundColor);
     root.style.setProperty('--gb-button-primary-color', themeConfig.buttons.primary.color);
+  }, []);
 
-    // Listen for language changes
-    const handleStorageChange = () => {
-      const newLang = i18n.language as Lang;
-      if (newLang !== currentLang) {
-        setCurrentLang(newLang);
-      }
-    };
+  /**
+   * Update font family when language changes (RTL/LTR).
+   */
+  useEffect(() => {
+    const fontFamily = currentLang === 'fa' ? themeConfig.fonts.rtl : themeConfig.fonts.ltr;
+    document.documentElement.style.fontFamily = fontFamily;
+  }, [currentLang]);
 
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Also check for manual changes to document attributes
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.type === 'attributes' && 
-            (mutation.attributeName === 'lang' || mutation.attributeName === 'dir')) {
-          const newLang = i18n.language as Lang;
-          if (newLang !== currentLang) {
-            setCurrentLang(newLang);
-          }
-        }
-      });
-    });
-
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['lang', 'dir']
-    });
-
+  /**
+   * Subscribe to i18n language changes to keep theme in sync.
+   */
+  useEffect(() => {
+    const handler = (lang: string) => setCurrentLang((lang as Lang) || 'fa');
+    i18n.on('languageChanged', handler);
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      observer.disconnect();
+      i18n.off('languageChanged', handler);
     };
-  }, [currentLang, isRtl]);
+  }, []);
 
   const contextValue: ThemeContextType = {
     isRtl,

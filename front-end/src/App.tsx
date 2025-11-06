@@ -21,7 +21,7 @@ export default function App() {
   useEffect(() => {
     applyDir(lang);
     axios.defaults.headers.common['Accept-Language'] = lang;
-    try { localStorage.setItem('lang', lang); } catch {}
+    try { localStorage.setItem('lang', lang); } catch { /* noop */ }
   }, [lang]);
 
   return (

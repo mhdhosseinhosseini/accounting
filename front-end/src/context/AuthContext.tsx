@@ -4,7 +4,6 @@
  */
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import config from '../config';
 import { useNavigate } from 'react-router-dom';
 
 export type ModulePermission = boolean | Record<string, boolean>;
@@ -43,12 +42,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const storedToken = localStorage.getItem('token');
       const storedUser = localStorage.getItem('user');
       if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
-        lastActivityRef.current = Date.now();
+        try {
+          const u = JSON.parse(storedUser);
+          setUser(u);
+          setToken(storedToken);
+        } catch {
+          // ignore
+        }
       }
-    } catch (e) {
-      console.error('localStorage unavailable:', e);
+      lastActivityRef.current = Date.now();
+    } catch {
+      // ignore
     }
   }, []);
 
@@ -56,22 +60,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      localStorage.setItem('token', token);
     } else {
       delete axios.defaults.headers.common['Authorization'];
+      localStorage.removeItem('token');
     }
   }, [token]);
 
   /**
    * Login using token and user object returned from server.
    */
-  const loginWithTokenAndUser = async (newToken: string, newUser: User) => {
-    setToken(newToken);
-    setUser(newUser);
+  const loginWithTokenAndUser = async (token: string, user: User) => {
+    setToken(token);
+    setUser(user);
     try {
-      localStorage.setItem('token', newToken);
-      localStorage.setItem('user', JSON.stringify(newUser));
-    } catch (e) {
-      console.error('Failed to persist auth data:', e);
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+    } catch {
+      // Failed to persist auth data
     }
     // Redirect to home
     navigate('/');
@@ -86,7 +92,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-    } catch {}
+    } catch {
+      /* noop */
+    }
     navigate('/login');
   };
 

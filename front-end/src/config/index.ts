@@ -1,5 +1,3 @@
-import.meta.env; // Ensure Vite loads env
-
 /**
  * Config for Accounting front-end.
  * Mirrors admin approach for BASE_URL and API endpoints.

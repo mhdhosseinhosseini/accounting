@@ -1,0 +1,1875 @@
+openapi: 3.0.3
+info:
+  title: Accounting API
+  version: 0.2.0
+  description: |
+    English: Phase 1 auth endpoints with JWT access/refresh tokens.
+    فارسی: فاز ۱؛ اندپوینت‌های احراز هویت با توکن دسترسی و رفرش.
+  x-i18n:
+    description:
+      en: Phase 1 auth endpoints with JWT access/refresh tokens.
+      fa: فاز ۱؛ اندپوینت‌های احراز هویت با توکن دسترسی و رفرش.
+servers:
+  - url: http://localhost:4100/api
+paths:
+  /auth/request-otp:
+    post:
+      summary: Request OTP code
+      x-i18n:
+        summary:
+          en: Request OTP code
+          fa: درخواست رمز یکبارمصرف
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mobileNumber:
+                  type: string
+                  description: Mobile number (Iran format e.g. 09XXXXXXXXX)
+                  x-i18n:
+                    description:
+                      en: Mobile number (Iran format e.g. 09XXXXXXXXX)
+                      fa: شماره موبایل (قالب ایران مثلاً 09XXXXXXXXX)
+              required: [mobileNumber]
+      responses:
+        '200':
+          description: OTP sent
+          x-i18n:
+            description:
+              en: OTP sent
+              fa: رمز یکبارمصرف ارسال شد
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  debugCode:
+                    type: string
+                    nullable: true
+  /auth/verify-otp:
+    post:
+      summary: Verify OTP code and log in
+      x-i18n:
+        summary:
+          en: Verify OTP code and log in
+          fa: اعتبارسنجی رمز یکبارمصرف و ورود
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mobileNumber:
+                  type: string
+                otp:
+                  type: string
+              required: [mobileNumber, otp]
+      responses:
+        '200':
+          description: Authenticated
+          x-i18n:
+            description:
+              en: Authenticated
+              fa: ورود با موفقیت انجام شد
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: JWT access token
+                  refreshToken:
+                    type: string
+                    description: JWT refresh token
+                  user:
+                    $ref: '#/components/schemas/AuthUser'
+  /auth/login:
+    post:
+      summary: Login with OTP (alias of verify-otp)
+      x-i18n:
+        summary:
+          en: Login with OTP (alias)
+          fa: ورود با رمز یکبارمصرف (نام مستعار)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mobileNumber:
+                  type: string
+                otp:
+                  type: string
+              required: [mobileNumber, otp]
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  refreshToken:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/AuthUser'
+  /auth/refresh:
+    post:
+      summary: Refresh access token
+      x-i18n:
+        summary:
+          en: Refresh access token
+          fa: به‌روزرسانی توکن دسترسی
+      parameters:
+        - in: header
+          name: x-refresh-token
+          schema:
+            type: string
+          required: false
+          description: Refresh token (alternative to sending in body)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: New tokens issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  refreshToken:
+                    type: string
+        '401':
+          description: Invalid or expired refresh token
+  /auth/logout:
+    post:
+      summary: Logout and revoke refresh token
+      x-i18n:
+        summary:
+          en: Logout and revoke refresh token
+          fa: خروج و لغو توکن رفرش
+      parameters:
+        - in: header
+          name: x-refresh-token
+          schema:
+            type: string
+          required: false
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Logged out
+  /me:
+    get:
+      summary: Get current user
+      x-i18n:
+        summary:
+          en: Get current user
+          fa: دریافت کاربر فعلی
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  user:
+                    $ref: '#/components/schemas/CurrentUser'
+        '401':
+          description: Unauthorized
+  /v1/fiscal-years:
+    get:
+      summary: List fiscal years
+      x-i18n:
+        summary:
+          en: List fiscal years
+          fa: فهرست سال‌های مالی
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of fiscal years
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FiscalYear'
+                  message:
+                    type: string
+    post:
+      summary: Create fiscal year
+      x-i18n:
+        summary:
+          en: Create fiscal year
+          fa: ایجاد سال مالی
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                start_date:
+                  type: string
+                  format: date
+                end_date:
+                  type: string
+                  format: date
+              required: [name, start_date, end_date]
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+  /v1/fiscal-years/{id}:
+    get:
+      summary: Get fiscal year
+      x-i18n:
+        summary:
+          en: Get fiscal year
+          fa: دریافت سال مالی
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Fiscal year
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item:
+                    $ref: '#/components/schemas/FiscalYear'
+                  message:
+                    type: string
+        '404':
+          description: Not found
+    patch:
+      summary: Update fiscal year
+      x-i18n:
+        summary:
+          en: Update fiscal year
+          fa: به‌روزرسانی سال مالی
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                start_date:
+                  type: string
+                  format: date
+                end_date:
+                  type: string
+                  format: date
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+  /v1/fiscal-years/{id}/close:
+    post:
+      summary: Close fiscal year
+      x-i18n:
+        summary:
+          en: Close fiscal year
+          fa: بستن سال مالی
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Closed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+  /v1/accounts:
+    get:
+      summary: List accounts
+      x-i18n:
+        summary:
+          en: List accounts
+          fa: فهرست حساب‌ها
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Account'
+                  message:
+                    type: string
+    post:
+      summary: Create account
+      x-i18n:
+        summary:
+          en: Create account
+          fa: ایجاد حساب
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                name:
+                  type: string
+                type:
+                  type: string
+                  enum: [asset, liability, equity, revenue, expense]
+                parent_id:
+                  type: string
+                  nullable: true
+              required: [code, name, type]
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+  /v1/accounts/{id}:
+    patch:
+      summary: Update account
+      x-i18n:
+        summary:
+          en: Update account
+          fa: به‌روزرسانی حساب
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                name:
+                  type: string
+                type:
+                  type: string
+                  enum: [asset, liability, equity, revenue, expense]
+                parent_id:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+    delete:
+      summary: Delete account
+      x-i18n:
+        summary:
+          en: Delete account
+          fa: حذف حساب
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+  /v1/accounts/tree:
+    get:
+      summary: Get account tree
+      x-i18n:
+        summary:
+          en: Get account tree
+          fa: دریافت درخت حساب‌ها
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Account tree
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tree:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Account'
+                  message:
+                    type: string
+  /v1/journals:
+    get:
+      summary: List journals
+      x-i18n:
+        summary:
+          en: List journals
+          fa: فهرست سندها
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of journals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Journal'
+                  message:
+                    type: string
+    post:
+      summary: Create journal draft
+      x-i18n:
+        summary:
+          en: Create journal draft
+          fa: ایجاد پیش‌نویس سند
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fiscal_year_id:
+                  type: string
+                date:
+                  type: string
+                  format: date
+                ref_no:
+                  type: string
+                  nullable: true
+                description:
+                  type: string
+                  nullable: true
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/JournalItemInput'
+              required: [fiscal_year_id, date, items]
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [draft, posted]
+                  message:
+                    type: string
+  /v1/journals/{id}:
+    get:
+      summary: Get journal
+      x-i18n:
+        summary:
+          en: Get journal
+          fa: دریافت سند
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Journal with items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item:
+                    $ref: '#/components/schemas/Journal'
+                  message:
+                    type: string
+        '404':
+          description: Not found
+    patch:
+      summary: Update journal (draft only)
+      x-i18n:
+        summary:
+          en: Update journal (draft only)
+          fa: به‌روزرسانی سند (فقط پیش‌نویس)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                date:
+                  type: string
+                  format: date
+                ref_no:
+                  type: string
+                  nullable: true
+                description:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+    delete:
+      summary: Delete journal (draft only)
+      x-i18n:
+        summary:
+          en: Delete journal (draft only)
+          fa: حذف سند (فقط پیش‌نویس)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+  /v1/journals/{id}/post:
+    post:
+      summary: Post journal
+      x-i18n:
+        summary:
+          en: Post journal
+          fa: پست کردن سند
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Posted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [draft, posted]
+                  message:
+                    type: string
+        '404':
+          description: Not found
+  /v1/products:
+    get:
+      summary: List products
+      x-i18n:
+        summary:
+          en: List products
+          fa: فهرست محصولات
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of products
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  message:
+                    type: string
+    post:
+      summary: Create product
+      x-i18n:
+        summary:
+          en: Create product
+          fa: ایجاد محصول
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                sku:
+                  type: string
+                  nullable: true
+                price:
+                  type: number
+              required: [name, price]
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+  /v1/products/{id}:
+    patch:
+      summary: Update product
+      x-i18n:
+        summary:
+          en: Update product
+          fa: به‌روزرسانی محصول
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                sku:
+                  type: string
+                  nullable: true
+                price:
+                  type: number
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+    delete:
+      summary: Delete product
+      x-i18n:
+        summary:
+          en: Delete product
+          fa: حذف محصول
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+  /v1/parties:
+    get:
+      summary: List parties
+      x-i18n:
+        summary:
+          en: List parties
+          fa: فهرست اشخاص
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of parties
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Party'
+                  message:
+                    type: string
+    post:
+      summary: Create party
+      x-i18n:
+        summary:
+          en: Create party
+          fa: ایجاد شخص
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                code:
+                  type: string
+                  nullable: true
+                mobile:
+                  type: string
+                  nullable: true
+                address:
+                  type: string
+                  nullable: true
+              required: [name]
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+  /v1/parties/{id}:
+    patch:
+      summary: Update party
+      x-i18n:
+        summary:
+          en: Update party
+          fa: به‌روزرسانی شخص
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                code:
+                  type: string
+                  nullable: true
+                mobile:
+                  type: string
+                  nullable: true
+                address:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+    delete:
+      summary: Delete party
+      x-i18n:
+        summary:
+          en: Delete party
+          fa: حذف شخص
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+  /v1/warehouses:
+    get:
+      summary: List warehouses
+      x-i18n:
+        summary:
+          en: List warehouses
+          fa: فهرست انبارها
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of warehouses
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Warehouse'
+                  message:
+                    type: string
+    post:
+      summary: Create warehouse
+      x-i18n:
+        summary:
+          en: Create warehouse
+          fa: ایجاد انبار
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                code:
+                  type: string
+              required: [name, code]
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+  /v1/warehouses/{id}:
+    patch:
+      summary: Update warehouse
+      x-i18n:
+        summary:
+          en: Update warehouse
+          fa: به‌روزرسانی انبار
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                code:
+                  type: string
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+    delete:
+      summary: Delete warehouse
+      x-i18n:
+        summary:
+          en: Delete warehouse
+          fa: حذف انبار
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+  /v1/journals/{id}/reverse:
+    post:
+      summary: Reverse posted journal
+      x-i18n:
+        summary:
+          en: Reverse posted journal
+          fa: برگشت سند پست‌شده
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reversed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [posted]
+                  message:
+                    type: string
+  /v1/fiscal-years/{id}/open-next:
+    post:
+      summary: Open next fiscal year
+      x-i18n:
+        summary:
+          en: Open next fiscal year
+          fa: باز کردن سال مالی بعدی
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Optional name override for the next fiscal year
+      responses:
+        '201':
+          description: Created next fiscal year
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+  /v1/invoices:
+    get:
+      summary: List invoices
+      x-i18n:
+        summary:
+          en: List invoices
+          fa: فهرست فاکتورها
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of invoices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Invoice'
+                  message:
+                    type: string
+    post:
+      summary: Create invoice (draft)
+      x-i18n:
+        summary:
+          en: Create invoice (draft)
+          fa: ایجاد فاکتور (پیش‌نویس)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fiscal_year_id:
+                  type: string
+                customer_id:
+                  type: string
+                  nullable: true
+                date:
+                  type: string
+                  format: date
+                invoice_no:
+                  type: string
+                  nullable: true
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/InvoiceItemInput'
+              required: [fiscal_year_id, date, items]
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+  /v1/invoices/{id}:
+    get:
+      summary: Get invoice
+      x-i18n:
+        summary:
+          en: Get invoice
+          fa: دریافت فاکتور
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Invoice with items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item:
+                    $ref: '#/components/schemas/Invoice'
+                  message:
+                    type: string
+        '404':
+          description: Not found
+    patch:
+      summary: Update invoice (draft only)
+      x-i18n:
+        summary:
+          en: Update invoice (draft only)
+          fa: به‌روزرسانی فاکتور (فقط پیش‌نویس)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fiscal_year_id:
+                  type: string
+                customer_id:
+                  type: string
+                  nullable: true
+                date:
+                  type: string
+                  format: date
+                invoice_no:
+                  type: string
+                  nullable: true
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/InvoiceItemInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+    delete:
+      summary: Delete invoice (draft only)
+      x-i18n:
+        summary:
+          en: Delete invoice (draft only)
+          fa: حذف فاکتور (فقط پیش‌نویس)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          description: Not found
+  /v1/invoices/{id}/post:
+    post:
+      summary: Post invoice
+      x-i18n:
+        summary:
+          en: Post invoice
+          fa: پست کردن فاکتور
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoicePostRequest'
+      responses:
+        '200':
+          description: Posted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [posted]
+                  message:
+                    type: string
+  /v1/inventory:
+    get:
+      summary: List inventory transactions
+      x-i18n:
+        summary:
+          en: List inventory transactions
+          fa: فهرست تراکنش‌های موجودی
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of inventory transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InventoryTransaction'
+                  message:
+                    type: string
+  /v1/reports/trial-balance:
+    get:
+      summary: Trial balance
+      x-i18n:
+        summary:
+          en: Trial balance
+          fa: تراز آزمایشی
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: fiscal_year_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Trial balance data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrialBalanceItem'
+                  totals:
+                    type: object
+                    properties:
+                      debit:
+                        type: number
+                      credit:
+                        type: number
+                  message:
+                    type: string
+  /v1/reports/ledger:
+    get:
+      summary: Ledger by account
+      x-i18n:
+        summary:
+          en: Ledger by account
+          fa: دفتر کل بر اساس حساب
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: fiscal_year_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: account_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: start_date
+          required: false
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: end_date
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Ledger items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LedgerItem'
+                  message:
+                    type: string
+  /v1/reports/balance-sheet:
+    get:
+      summary: Balance sheet
+      x-i18n:
+        summary:
+          en: Balance sheet
+          fa: ترازنامه
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: fiscal_year_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Balance sheet summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    $ref: '#/components/schemas/BalanceSheetSummary'
+                  message:
+                    type: string
+  /v1/reports/profit-loss:
+    get:
+      summary: Profit & loss
+      x-i18n:
+        summary:
+          en: Profit & loss
+          fa: سود و زیان
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: fiscal_year_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Profit & loss summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    $ref: '#/components/schemas/ProfitLossSummary'
+                  message:
+                    type: string
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        isAdmin:
+          type: boolean
+        role:
+          type: string
+        name:
+          type: string
+        familyName:
+          type: string
+        address:
+          type: string
+        mobileNumber:
+          type: string
+        permissions:
+          type: object
+      required: [username, mobileNumber, role]
+    CurrentUser:
+      type: object
+      properties:
+        mobileNumber:
+          type: string
+        role:
+          type: string
+      required: [mobileNumber, role]
+    FiscalYear:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        is_closed:
+          type: boolean
+      required: [id, name, start_date, end_date]
+    Account:
+      type: object
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        parent_id:
+          type: string
+          nullable: true
+        level:
+          type: integer
+        type:
+          type: string
+          enum: [asset, liability, equity, revenue, expense]
+      required: [id, code, name, type]
+    Journal:
+      type: object
+      properties:
+        id:
+          type: string
+        fiscal_year_id:
+          type: string
+        ref_no:
+          type: string
+          nullable: true
+        date:
+          type: string
+          format: date
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [draft, posted]
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/JournalItem'
+      required: [id, fiscal_year_id, date, status]
+    JournalItem:
+      type: object
+      properties:
+        id:
+          type: string
+        journal_id:
+          type: string
+        account_id:
+          type: string
+        party_id:
+          type: string
+          nullable: true
+        debit:
+          type: number
+        credit:
+          type: number
+        description:
+          type: string
+          nullable: true
+      required: [id, journal_id, account_id, debit, credit]
+    JournalItemInput:
+      type: object
+      properties:
+        account_id:
+          type: string
+        party_id:
+          type: string
+          nullable: true
+        debit:
+          type: number
+        credit:
+          type: number
+        description:
+          type: string
+          nullable: true
+      required: [account_id, debit, credit]
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        sku:
+          type: string
+          nullable: true
+        price:
+          type: number
+      required: [id, name, price]
+    Party:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+          nullable: true
+        mobile:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+      required: [id, name]
+    Warehouse:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+      required: [id, name, code]
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: string
+        fiscal_year_id:
+          type: string
+        customer_id:
+          type: string
+          nullable: true
+        date:
+          type: string
+          format: date
+        invoice_no:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [draft, posted]
+        total:
+          type: number
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceItem'
+      required: [id, fiscal_year_id, date, status]
+    InvoiceItem:
+      type: object
+      properties:
+        id:
+          type: string
+        invoice_id:
+          type: string
+        product_id:
+          type: string
+          nullable: true
+        quantity:
+          type: number
+        unit_price:
+          type: number
+        total:
+          type: number
+      required: [id, invoice_id, quantity, unit_price, total]
+    InvoiceItemInput:
+      type: object
+      properties:
+        product_id:
+          type: string
+          nullable: true
+        quantity:
+          type: number
+        unit_price:
+          type: number
+      required: [quantity, unit_price]
+    InvoicePostRequest:
+      type: object
+      properties:
+        accounts:
+          type: object
+          properties:
+            receivable_account_id:
+              type: string
+            sales_account_id:
+              type: string
+          required: [receivable_account_id, sales_account_id]
+        warehouse_id:
+          type: string
+          nullable: true
+      required: [accounts]
+    InventoryTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+        product_id:
+          type: string
+        warehouse_id:
+          type: string
+        quantity:
+          type: number
+        type:
+          type: string
+          enum: [in, out]
+        date:
+          type: string
+          format: date
+        reference:
+          type: string
+      required: [id, product_id, warehouse_id, quantity, type, date]
+    TrialBalanceItem:
+      type: object
+      properties:
+        account_id:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        debit:
+          type: number
+        credit:
+          type: number
+      required: [account_id, code, name, type, debit, credit]
+    LedgerItem:
+      type: object
+      properties:
+        journal_id:
+          type: string
+        date:
+          type: string
+          format: date
+        ref_no:
+          type: string
+          nullable: true
+        item_id:
+          type: string
+        debit:
+          type: number
+        credit:
+          type: number
+        description:
+          type: string
+          nullable: true
+      required: [journal_id, date, item_id, debit, credit]
+    BalanceSheetSummary:
+      type: object
+      properties:
+        assets:
+          type: number
+        liabilities:
+          type: number
+        equity:
+          type: number
+        retained_earnings:
+          type: number
+        liabilities_plus_equity:
+          type: number
+      required: [assets, liabilities, equity, retained_earnings, liabilities_plus_equity]
+    ProfitLossSummary:
+      type: object
+      properties:
+        revenue:
+          type: number
+        expense:
+          type: number
+        profit:
+          type: number
+      required: [revenue, expense, profit]

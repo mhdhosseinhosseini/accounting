@@ -8,7 +8,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import config from '../config';
-import { t, i18n } from '../i18n';
+import { i18n } from '../i18n';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../theme';
 import Navbar from '../components/Navbar';
 
@@ -21,7 +22,8 @@ const CODE_LENGTH = 6;
 
 export const LoginPage: React.FC = () => {
   const { loginWithTokenAndUser } = useAuth();
-  const { theme, isRtl } = useTheme();
+  const { theme } = useTheme();
+  const { t } = useTranslation();
   const [step, setStep] = useState<'mobile' | 'code'>('mobile');
   const [mobileNumber, setMobileNumber] = useState('');
   const [error, setError] = useState('');
@@ -29,25 +31,30 @@ export const LoginPage: React.FC = () => {
   const [codeDigits, setCodeDigits] = useState<string[]>(Array(CODE_LENGTH).fill(''));
   const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
   const [resendCooldown, setResendCooldown] = useState(0);
-  const [timerId, setTimerId] = useState<number | null>(null);
   const devAutoLogin = String(import.meta.env.VITE_DEV_AUTO_LOGIN || '').toLowerCase() === 'true';
 
   // Keep Accept-Language aligned with current language from i18next
   useEffect(() => {
-    axios.defaults.headers.common['Accept-Language'] = i18n.language;
-  }, [i18n.language]);
+    const handleLanguageChange = (lang: string) => {
+      axios.defaults.headers.common['Accept-Language'] = lang;
+    };
+    i18n.on('languageChanged', handleLanguageChange);
+    handleLanguageChange(i18n.language); // Set initial value
+    return () => {
+      i18n.off('languageChanged', handleLanguageChange);
+    };
+  }, []);
 
   // Start a simple 60s timer after requesting OTP
   useEffect(() => {
     if (step === 'code') {
       setResendCooldown(60);
-      const id = window.setInterval(() => setResendCooldown(prev => (prev > 0 ? prev - 1 : 0)), 1000);
-      setTimerId(id);
-      return () => clearInterval(id);
-    }
-    if (timerId) {
-      clearInterval(timerId);
-      setTimerId(null);
+      const id = window.setInterval(() => {
+        setResendCooldown(prev => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+      return () => {
+        clearInterval(id);
+      };
     }
   }, [step]);
 
@@ -67,8 +74,12 @@ export const LoginPage: React.FC = () => {
       setCodeDigits(Array(CODE_LENGTH).fill(''));
       // Focus first code box
       setTimeout(() => inputsRef.current[0]?.focus(), 100);
-    } catch (e: any) {
-      setError(e?.response?.data?.message || t('auth.request_failed', 'Failed to send OTP'));
+    } catch (e) {
+      let message = t('auth.request_failed', 'Failed to send OTP');
+      if (axios.isAxiosError<{ message: string }>(e) && e.response?.data?.message) {
+        message = e.response.data.message;
+      }
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -89,8 +100,12 @@ export const LoginPage: React.FC = () => {
       const res = await axios.post(`${config.API_ENDPOINTS.base}/auth/verify-otp`, { mobileNumber, otp: code });
       const { token, user } = res.data;
       await loginWithTokenAndUser(token, user);
-    } catch (e: any) {
-      setError(e?.response?.data?.message || t('auth.verify_failed', 'Failed to verify OTP'));
+    } catch (e) {
+      let message = t('auth.verify_failed', 'Failed to verify OTP');
+      if (axios.isAxiosError<{ message: string }>(e) && e.response?.data?.message) {
+        message = e.response.data.message;
+      }
+      setError(message);
     } finally {
       setLoading(false);
     }

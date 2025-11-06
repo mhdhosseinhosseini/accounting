@@ -1,0 +1,169 @@
+-- 0001_init.sql — Initial schema for Phase 2 (Postgres)
+-- Includes schema_migrations tracking and all core tables
+
+BEGIN;
+
+-- Track applied migrations
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version TEXT PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Phase 1 tables
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  mobile_number TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  revoked BOOLEAN DEFAULT FALSE NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- Phase 2 core tables
+CREATE TABLE IF NOT EXISTS roles (
+  id TEXT PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_roles (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role_id TEXT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  assigned_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+  UNIQUE (user_id, role_id)
+);
+
+CREATE TABLE IF NOT EXISTS fiscal_years (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  is_closed BOOLEAN DEFAULT FALSE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS accounts (
+  id TEXT PRIMARY KEY,
+  code TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  parent_id TEXT REFERENCES accounts(id) ON DELETE SET NULL,
+  level INT DEFAULT 0 NOT NULL,
+  type TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS parties (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  code TEXT UNIQUE,
+  mobile TEXT,
+  address TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS products (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  sku TEXT UNIQUE,
+  price NUMERIC(18,2) DEFAULT 0 NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS warehouses (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  code TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS journals (
+  id TEXT PRIMARY KEY,
+  fiscal_year_id TEXT NOT NULL REFERENCES fiscal_years(id) ON DELETE CASCADE,
+  ref_no TEXT,
+  date TIMESTAMPTZ NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'draft' NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS journal_items (
+  id TEXT PRIMARY KEY,
+  journal_id TEXT NOT NULL REFERENCES journals(id) ON DELETE CASCADE,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  party_id TEXT REFERENCES parties(id) ON DELETE SET NULL,
+  debit NUMERIC(18,2) DEFAULT 0 NOT NULL,
+  credit NUMERIC(18,2) DEFAULT 0 NOT NULL,
+  description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id TEXT PRIMARY KEY,
+  invoice_no TEXT UNIQUE,
+  fiscal_year_id TEXT REFERENCES fiscal_years(id) ON DELETE SET NULL,
+  customer_id TEXT REFERENCES parties(id) ON DELETE SET NULL,
+  date TIMESTAMPTZ NOT NULL,
+  status TEXT DEFAULT 'draft' NOT NULL,
+  total NUMERIC(18,2) DEFAULT 0 NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS invoice_items (
+  id TEXT PRIMARY KEY,
+  invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  product_id TEXT REFERENCES products(id) ON DELETE SET NULL,
+  quantity NUMERIC(18,3) DEFAULT 0 NOT NULL,
+  unit_price NUMERIC(18,2) DEFAULT 0 NOT NULL,
+  total NUMERIC(18,2) DEFAULT 0 NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS inventory_transactions (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  warehouse_id TEXT NOT NULL REFERENCES warehouses(id) ON DELETE RESTRICT,
+  quantity NUMERIC(18,3) NOT NULL,
+  type TEXT NOT NULL,
+  date TIMESTAMPTZ NOT NULL,
+  reference TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id TEXT PRIMARY KEY,
+  party_id TEXT REFERENCES parties(id) ON DELETE SET NULL,
+  amount NUMERIC(18,2) NOT NULL,
+  date TIMESTAMPTZ NOT NULL,
+  method TEXT,
+  reference TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS opening_entries (
+  id TEXT PRIMARY KEY,
+  fiscal_year_id TEXT NOT NULL REFERENCES fiscal_years(id) ON DELETE CASCADE,
+  journal_id TEXT NOT NULL REFERENCES journals(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS closing_entries (
+  id TEXT PRIMARY KEY,
+  fiscal_year_id TEXT NOT NULL REFERENCES fiscal_years(id) ON DELETE CASCADE,
+  journal_id TEXT NOT NULL REFERENCES journals(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id TEXT PRIMARY KEY,
+  actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  entity TEXT,
+  entity_id TEXT,
+  details JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+COMMIT;

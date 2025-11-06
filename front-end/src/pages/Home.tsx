@@ -3,12 +3,14 @@
  */
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 import config from '../config';
 import Navbar from '../components/Navbar';
-import { applyDir, t, i18n, Lang } from '../i18n';
+import { applyDir, i18n, Lang } from '../i18n';
 
 /**
  * Fetch health info from backend using Accept-Language header.
+ * @param lang - current language code
  */
 async function fetchHealth(lang: Lang): Promise<{ status: string; message: string }> {
   const response = await axios.get(`${config.API_ENDPOINTS.base}/health`, {
@@ -18,25 +20,34 @@ async function fetchHealth(lang: Lang): Promise<{ status: string; message: strin
 }
 
 export const Home: React.FC = () => {
+  const { t } = useTranslation();
   const [healthMsg, setHealthMsg] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Apply direction and sync with localStorage when language changes
+  /**
+   * Subscribe to language changes: set RTL/LTR, persist lang, and refetch health.
+   */
   useEffect(() => {
-    const currentLang = (i18n.language || 'fa') as Lang;
-    applyDir(currentLang);
-    try { localStorage.setItem('lang', currentLang); } catch {}
-  }, [i18n.language]);
+    const handleLang = (lang: string) => {
+      const l = (lang || 'fa') as Lang;
+      applyDir(l);
+      try { localStorage.setItem('lang', l); } catch { /* noop */ }
+      fetchHealth(l)
+        .then((data) => setHealthMsg(data.message))
+        .catch(() => setError(t('fetch.error', 'Failed to fetch data')))
+        .finally(() => setLoading(false));
+    };
 
-  // Fetch health data when language changes
-  useEffect(() => {
-    const currentLang = (i18n.language || 'fa') as Lang;
-    fetchHealth(currentLang)
-      .then((data) => setHealthMsg(data.message))
-      .catch(() => setError(t('fetch.error', 'Failed to fetch data')))
-      .finally(() => setLoading(false));
-  }, [i18n.language]);
+    // Run once on mount with current language
+    handleLang((i18n.language || 'fa') as Lang);
+
+    // Subscribe to future language changes
+    i18n.on('languageChanged', handleLang);
+    return () => {
+      i18n.off('languageChanged', handleLang);
+    };
+  }, [t]);
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">

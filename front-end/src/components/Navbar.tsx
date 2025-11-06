@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, LogOut, Languages, Menu, X } from 'lucide-react';
+import { User, LogOut, Languages } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { t, applyDir, i18n } from '../i18n';
@@ -12,7 +12,7 @@ import axios from 'axios';
  * Removes all middle navigation menus and dashboard link as requested.
  */
 const Navbar: React.FC = () => {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [currentLanguage, setCurrentLanguage] = useState<'fa' | 'en'>(
@@ -26,7 +26,7 @@ const Navbar: React.FC = () => {
     document.documentElement.setAttribute('lang', currentLanguage);
     try { 
       localStorage.setItem('lang', currentLanguage); 
-    } catch {}
+    } catch { /* noop */ }
   }, [currentLanguage]);
 
   /**

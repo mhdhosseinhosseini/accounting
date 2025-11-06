@@ -10,9 +10,27 @@ import dotenv from 'dotenv';
 import { langMiddleware } from './middleware/lang';
 import { t, Lang } from './i18n';
 import { authRouter } from './routes/auth';
+import { fiscalYearsRouter } from './routes/fiscalYears';
+import { accountsRouter } from './routes/accounts';
+import { journalsRouter } from './routes/journals';
+import { productsRouter } from './routes/products';
+import { partiesRouter } from './routes/parties';
+import { warehousesRouter } from './routes/warehouses';
+import { invoicesRouter } from './routes/invoices';
+import { inventoryRouter } from './routes/inventory';
+import { requireAuth } from './middleware/auth';
+import { ensureSchema, pingDb } from './db/driver';
+import swaggerUi from 'swagger-ui-express';
+import fs from 'fs';
+import path from 'path';
+import YAML from 'yaml';
+import { reportsRouter } from './routes/reports';
 
 // Load environment variables
 dotenv.config();
+
+// Parsed OpenAPI spec cache for debugging Swagger UI
+let openapiSpec: any | null = null;
 
 /**
  * Create and configure the Express application.
@@ -33,68 +51,100 @@ function createApp() {
   app.use('/api/auth', authRouter);
 
   /**
+   * Current user endpoint using JWT access token.
+   */
+  app.get('/api/me', requireAuth, (req: Request, res: Response) => {
+    const lang: Lang = (req as any).lang || 'en';
+    const user = (req as any).user || null;
+    res.json({ ok: true, user });
+  });
+
+  /**
    * Health check endpoint.
-   * Returns localized message indicating service health.
+   * Returns localized message and database connectivity status.
    */
-  app.get('/api/health', (req: Request, res: Response) => {
+  app.get('/api/health', async (req: Request, res: Response) => {
     const lang: Lang = (req as any).lang || 'en';
-    res.json({ ok: true, message: t('health.ok', lang) });
+    const ping = await pingDb().catch(() => ({ ok: false, driver: (process.env.DB_DRIVER?.toLowerCase() === 'sqlite' ? 'sqlite' : 'postgres') as 'sqlite' | 'postgres' }));
+    res.json({ ok: true, message: t('health.ok', lang), db: ping });
   });
 
   /**
-   * List fiscal years (stub).
-   * In phase 2 this will query PostgreSQL; now returns empty list.
+   * Swagger UI: serves OpenAPI spec from openapi.yaml at /api/docs.
+   * Attempts multiple paths to locate the YAML file both in dev (src) and build (dist).
+   * Persian (Farsi) labels in the spec are preserved via the YAML content.
    */
-  app.get('/api/v1/fiscal-years', (req: Request, res: Response) => {
-    const lang: Lang = (req as any).lang || 'en';
-    res.json({ items: [], message: t('fiscalYears.list', lang) });
-  });
-
-  /**
-   * Create a journal (draft).
-   * Validates double-entry at the request level and returns a stub ID.
-   */
-  app.post('/api/v1/journals', (req: Request, res: Response) => {
-    const lang: Lang = (req as any).lang || 'en';
-    const items = Array.isArray(req.body?.items) ? req.body.items : [];
-    const totals = items.reduce(
-      (acc: { debit: number; credit: number }, it: any) => {
-        const d = Number(it?.debit || 0);
-        const c = Number(it?.credit || 0);
-        return { debit: acc.debit + d, credit: acc.credit + c };
-      },
-      { debit: 0, credit: 0 }
-    );
-    if (Math.abs(totals.debit - totals.credit) > 0.0001) {
-      return res.status(400).json({ ok: false, error: t('error.unbalanced', lang) });
+  try {
+    const candidates = [
+      path.resolve(__dirname, '../openapi.yaml'),
+      path.resolve(__dirname, '../../openapi.yaml'),
+      path.resolve(process.cwd(), 'openapi.yaml'),
+    ];
+    let spec: any | null = null;
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        const file = fs.readFileSync(p, 'utf8');
+        spec = YAML.parse(file);
+        openapiSpec = spec;
+        break;
+      }
     }
-    const id = require('crypto').randomUUID();
-    res.status(201).json({ id, status: 'draft', message: t('journal.created', lang) });
+    if (spec) {
+      app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(spec, { explorer: true }));
+    }
+  } catch (e) {
+    console.error('Failed to mount Swagger UI:', e);
+  }
+
+  /**
+   * Expose the parsed OpenAPI spec as JSON for debugging.
+   * Route: GET /api/openapi.json
+   * Returns the currently loaded OpenAPI document so we can verify 'paths' entries.
+   */
+  app.get('/api/openapi.json', (req: Request, res: Response) => {
+    res.json(openapiSpec || {});
   });
 
   /**
-   * Post a journal (stub).
-   * Marks the journal as posted (no persistence yet).
+   * Phase 2 routers: fiscal years, accounts, journals, products, and parties
    */
-  app.post('/api/v1/journals/:id/post', (req: Request, res: Response) => {
-    const lang: Lang = (req as any).lang || 'en';
-    const { id } = req.params;
-    res.json({ id, status: 'posted', message: t('journal.posted', lang) });
-  });
+  app.use('/api/v1/fiscal-years', fiscalYearsRouter);
+  app.use('/api/v1/accounts', accountsRouter);
+  app.use('/api/v1/journals', journalsRouter);
+  app.use('/api/v1/products', productsRouter);
+  app.use('/api/v1/parties', partiesRouter);
+  app.use('/api/v1/warehouses', warehousesRouter);
+  app.use('/api/v1/invoices', invoicesRouter);
+  app.use('/api/v1/inventory', inventoryRouter);
+  app.use('/api/v1/reports', reportsRouter);
+
+  // Journals endpoints are handled by journalsRouter mounted above.
 
   return app;
 }
 
 /**
  * Boot the HTTP server using PORT from environment or default 4000.
+ * Ensures database schema before listening to requests.
  */
 function startServer() {
   const app = createApp();
   const port = Number(process.env.PORT || 4100);
-  app.listen(port, () => {
-    console.log(`Accounting API listening on http://localhost:${port}`);
-  });
+  ensureSchema()
+    .catch((e) => {
+      console.error('Failed to ensure schema:', e);
+    })
+    .finally(() => {
+      app.listen(port, () => {
+        console.log(`Accounting API listening on http://localhost:${port}`);
+      });
+    });
 }
 
-// Start the server when executed directly
-startServer();
+// Export createApp for tests
+export { createApp };
+
+// Start the server unless running in test mode
+if (process.env.NODE_ENV !== 'test') {
+  startServer();
+}

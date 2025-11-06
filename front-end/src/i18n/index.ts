@@ -2,7 +2,7 @@
  * i18n configuration using i18next for the accounting project.
  * Provides translation functionality similar to the admin project.
  */
-import i18n from 'i18next';
+import i18n, { TOptions } from 'i18next';
 import { initReactI18next, useTranslation } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import en from './locales/en.json';
@@ -30,6 +30,12 @@ i18n
     }
   });
 
+// Sync document attributes on init and language changes
+updateDocLangDir((i18n.language as Lang) || 'fa');
+i18n.on('languageChanged', (lang: string) => {
+  updateDocLangDir((lang as Lang) || 'fa');
+});
+
 /**
  * Get initial language - defaults to Farsi.
  */
@@ -43,24 +49,25 @@ export function getInitialLang(): Lang {
  * @param fallback - Fallback English text (e.g., 'Save')
  * @param options - Optional interpolation options
  */
-export function t(key: string, fallback?: string, options?: any): string {
-  const translation = i18n.t(key, options) as string;
-  // If translation is the same as key (not found) and we have a fallback, use fallback
-  if (translation === key && fallback) {
-    return fallback;
-  }
+export function t(key: string, fallback?: string, options?: TOptions): string {
+  const translation = i18n.t(key, { ...options, defaultValue: fallback }) as string;
   return translation;
 }
 
 /**
- * Set document direction per language.
+ * Set document direction and lang attributes without changing i18n language.
  */
-export function applyDir(lang: Lang) {
+export function updateDocLangDir(lang: Lang) {
   const dir = lang === 'fa' ? 'rtl' : 'ltr';
   document.documentElement.setAttribute('dir', dir);
   document.documentElement.setAttribute('lang', lang);
-  
-  // Update i18next language
+}
+
+/**
+ * Change i18n language and update document attributes.
+ */
+export function applyDir(lang: Lang) {
+  updateDocLangDir(lang);
   i18n.changeLanguage(lang);
 }
 

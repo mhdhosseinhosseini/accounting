@@ -1,0 +1,6 @@
+{
+  "common.save": "Save",
+  "common.cancel": "Cancel",
+  "auth.otpSent": "Verification code sent",
+  "auth.verified": "Login successful"
+}
