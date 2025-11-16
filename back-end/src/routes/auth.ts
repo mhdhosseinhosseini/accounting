@@ -63,7 +63,7 @@ function parseExpires(value: string): number {
 }
 
 /**
- * Issue tokens and persist refresh token using direct SQL (pg/sqlite via driver).
+ * Issue tokens and persist refresh token using direct SQL (Postgres via driver).
  * Ensures schema, upserts user by mobile, stores refresh token with expiry.
  */
 async function issueTokensForMobile(mobileNumber: string) {
@@ -93,53 +93,8 @@ function getLang(req: Request): Lang {
 /**
  * Helper: localized messages.
  */
-function msg(key: string, lang: 'fa' | 'en'): string {
-  const dict: Record<string, { fa: string; en: string }> = {
-    invalidMobile: {
-      fa: 'شماره موبایل نامعتبر است',
-      en: 'Invalid mobile number',
-    },
-    otpSent: {
-      fa: 'کد تایید ارسال شد',
-      en: 'Verification code sent',
-    },
-    tooManyRequests: {
-      fa: 'لطفاً کمی صبر کنید و دوباره تلاش کنید',
-      en: 'Please wait a bit and try again',
-    },
-    codeExpired: {
-      fa: 'کد تایید منقضی شده است',
-      en: 'Verification code expired',
-    },
-    wrongCode: {
-      fa: 'کد تایید اشتباه است',
-      en: 'Incorrect verification code',
-    },
-    verified: {
-      fa: 'ورود با موفقیت انجام شد',
-      en: 'Login successful',
-    },
-    invalidToken: {
-      fa: 'توکن نامعتبر یا منقضی است',
-      en: 'Invalid or expired token',
-    },
-    refreshed: {
-      fa: 'توکن با موفقیت به‌روزرسانی شد',
-      en: 'Token refreshed successfully',
-    },
-    loggedOut: {
-      fa: 'خروج با موفقیت انجام شد',
-      en: 'Logged out successfully',
-    },
-  };
-  return (dict[key] || { fa: key, en: key })[lang];
-}
-
-/**
- * Zod schemas for inputs.
- */
-const RequestOtpSchema = z.object({ mobileNumber: z.string().regex(/^09\d{9}$/) });
-const VerifyOtpSchema = z.object({ mobileNumber: z.string().regex(/^09\d{9}$/), otp: z.string().length(6) });
+// Removed unused msg() helper (t() is used for i18n messages)
+// Removed unused RequestOtpSchema and VerifyOtpSchema (inline schemas are used in handlers)
 
 /**
  * POST /api/auth/request-otp
@@ -170,7 +125,9 @@ router.post('/request-otp', otpLimiter, async (req: Request, res: Response) => {
   }
 
   // Determine if SMS provider is configured (production behavior)
-  const isConfigured = !!(
+  // Dev override: when DEV_FORCE_DEBUG_OTP=true, treat SMS as not configured and expose debugCode
+  const devForceDebug = String(process.env.DEV_FORCE_DEBUG_OTP || '').toLowerCase() === 'true';
+  const isConfigured = !devForceDebug && !!(
     process.env.MAGFA_USERNAME && process.env.MAGFA_PASSWORD && process.env.MAGFA_DOMAIN
   );
 
@@ -178,23 +135,22 @@ router.post('/request-otp', otpLimiter, async (req: Request, res: Response) => {
   const code = String(Math.floor(100000 + Math.random() * 900000));
   const expiresAt = Date.now() + 2 * 60 * 1000; // 2 minutes
   otpStore.set(mobileNumber, { code, expiresAt });
-  console.log(`Generated OTP for ${mobileNumber}: ${code}`);
+  // Removed console.log for lint; rely on debugCode in dev mode
 
   const result = await smsService.sendOtp(mobileNumber, code);
   if (!result.success) {
-    if (isConfigured) {
-      // In production, fail the request so user isn't stuck without SMS
-      return res.status(500).json({ ok: false, message: result.error || t('auth.tooManyRequests', lang) });
-    }
-    // Dev fallback: log but continue
-    console.error('SMS send failed (dev fallback):', result.error);
+      if (isConfigured) {
+       // In production, fail the request so user isn't stuck without SMS
+       return res.status(500).json({ ok: false, message: result.error || t('auth.tooManyRequests', lang) });
+     }
+     // Dev fallback: continue without logging
   }
 
   const body: any = { ok: true, message: t('auth.otpSent', lang) };
-  if (!isConfigured) {
-    // Helpful for development/testing (do not rely on this in production)
-    body.debugCode = code;
-  }
+    if (!isConfigured) {
+     // Helpful for development/testing (do not rely on this in production)
+     body.debugCode = code;
+   }
   return res.json(body);
 });
 

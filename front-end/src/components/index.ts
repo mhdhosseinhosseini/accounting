@@ -6,3 +6,4 @@
 export { Button } from './Button';
 export { ThemeExample } from './ThemeExample';
 export { default as Navbar } from './Navbar';
+export { default as NumericInput } from './common/NumericInput';

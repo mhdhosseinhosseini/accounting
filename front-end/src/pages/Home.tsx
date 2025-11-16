@@ -6,7 +6,7 @@ import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import config from '../config';
 import Navbar from '../components/Navbar';
-import { applyDir, i18n, Lang } from '../i18n';
+import { i18n, Lang, updateDocLangDir } from '../i18n';
 
 /**
  * Fetch health info from backend using Accept-Language header.
@@ -26,12 +26,15 @@ export const Home: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
 
   /**
-   * Subscribe to language changes: set RTL/LTR, persist lang, and refetch health.
+   * Subscribe to language changes: update RTL/LTR, persist lang, and refetch health.
+   * IMPORTANT: Do NOT call `i18n.changeLanguage` here to avoid recursion;
+   * this handler is triggered by `languageChanged` already.
    */
   useEffect(() => {
     const handleLang = (lang: string) => {
       const l = (lang || 'fa') as Lang;
-      applyDir(l);
+      // Only update document attributes; don't change language again.
+      updateDocLangDir(l);
       try { localStorage.setItem('lang', l); } catch { /* noop */ }
       fetchHealth(l)
         .then((data) => setHealthMsg(data.message))

@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+
 import { randomUUID } from 'crypto';
 
 let db: Database.Database | null = null;
@@ -78,18 +79,40 @@ export async function ensureSchema(): Promise<void> {
       );
     `);
 
+    // Accounts table removed; journal_items now references codes instead of accounts.
+
+    // Details: global 4-digit codes, no prefix, unique
     d.exec(`
-      CREATE TABLE IF NOT EXISTS accounts (
+      CREATE TABLE IF NOT EXISTS details (
         id TEXT PRIMARY KEY,
         code TEXT UNIQUE NOT NULL,
-        name TEXT NOT NULL,
-        parent_id TEXT,
-        level INTEGER DEFAULT 0 NOT NULL,
-        type TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        FOREIGN KEY(parent_id) REFERENCES accounts(id) ON DELETE SET NULL
+        title TEXT NOT NULL,
+        is_active INTEGER DEFAULT 1 NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
       );
     `);
+
+    // Codes: two-level General → Specific tree with optional parent
+    d.exec(`
+      CREATE TABLE IF NOT EXISTS codes (
+        id TEXT PRIMARY KEY,
+        code TEXT UNIQUE NOT NULL,
+        title TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        parent_id TEXT,
+        is_active INTEGER DEFAULT 1 NOT NULL,
+        nature INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        FOREIGN KEY(parent_id) REFERENCES codes(id) ON DELETE SET NULL
+      );
+    `);
+
+    // Ensure legacy SQLite databases also have the 'nature' column
+    const cols = d.prepare("PRAGMA table_info(codes)").all() as any[];
+    const hasNature = Array.isArray(cols) && cols.some((c: any) => c.name === 'nature');
+    if (!hasNature) {
+      d.exec(`ALTER TABLE codes ADD COLUMN nature INTEGER`);
+    }
 
     d.exec(`
       CREATE TABLE IF NOT EXISTS parties (
@@ -138,13 +161,13 @@ export async function ensureSchema(): Promise<void> {
       CREATE TABLE IF NOT EXISTS journal_items (
         id TEXT PRIMARY KEY,
         journal_id TEXT NOT NULL,
-        account_id TEXT NOT NULL,
+        code_id TEXT NOT NULL,
         party_id TEXT,
         debit REAL DEFAULT 0 NOT NULL,
         credit REAL DEFAULT 0 NOT NULL,
         description TEXT,
         FOREIGN KEY(journal_id) REFERENCES journals(id) ON DELETE CASCADE,
-        FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE RESTRICT,
+        FOREIGN KEY(code_id) REFERENCES codes(id) ON DELETE RESTRICT,
         FOREIGN KEY(party_id) REFERENCES parties(id) ON DELETE SET NULL
       );
     `);
@@ -235,13 +258,11 @@ export async function ensureSchema(): Promise<void> {
         entity TEXT,
         entity_id TEXT,
         details TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        FOREIGN KEY(actor_user_id) REFERENCES users(id) ON DELETE SET NULL
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
       );
     `);
   });
 
-  // Execute transactional schema creation
   txn();
   schemaReady = true;
 }

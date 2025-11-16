@@ -11,7 +11,7 @@ import { langMiddleware } from './middleware/lang';
 import { t, Lang } from './i18n';
 import { authRouter } from './routes/auth';
 import { fiscalYearsRouter } from './routes/fiscalYears';
-import { accountsRouter } from './routes/accounts';
+// import { accountsRouter } from './routes/accounts';
 import { journalsRouter } from './routes/journals';
 import { productsRouter } from './routes/products';
 import { partiesRouter } from './routes/parties';
@@ -25,6 +25,9 @@ import fs from 'fs';
 import path from 'path';
 import YAML from 'yaml';
 import { reportsRouter } from './routes/reports';
+import { detailsRouter } from './routes/details';
+import codesRouter from './routes/codes';
+import { detailLevelsRouter } from './routes/detailLevels';
 
 // Load environment variables
 dotenv.config();
@@ -65,7 +68,7 @@ function createApp() {
    */
   app.get('/api/health', async (req: Request, res: Response) => {
     const lang: Lang = (req as any).lang || 'en';
-    const ping = await pingDb().catch(() => ({ ok: false, driver: (process.env.DB_DRIVER?.toLowerCase() === 'sqlite' ? 'sqlite' : 'postgres') as 'sqlite' | 'postgres' }));
+    const ping = await pingDb().catch(() => ({ ok: false, driver: 'postgres' as const }));
     res.json({ ok: true, message: t('health.ok', lang), db: ping });
   });
 
@@ -109,7 +112,7 @@ function createApp() {
    * Phase 2 routers: fiscal years, accounts, journals, products, and parties
    */
   app.use('/api/v1/fiscal-years', fiscalYearsRouter);
-  app.use('/api/v1/accounts', accountsRouter);
+  // app.use('/api/v1/accounts', accountsRouter); // accounts removed
   app.use('/api/v1/journals', journalsRouter);
   app.use('/api/v1/products', productsRouter);
   app.use('/api/v1/parties', partiesRouter);
@@ -117,6 +120,9 @@ function createApp() {
   app.use('/api/v1/invoices', invoicesRouter);
   app.use('/api/v1/inventory', inventoryRouter);
   app.use('/api/v1/reports', reportsRouter);
+  app.use('/api/v1/details', detailsRouter);
+  app.use('/api/v1/codes', codesRouter);
+  app.use('/api/v1/detail-levels', detailLevelsRouter);
 
   // Journals endpoints are handled by journalsRouter mounted above.
 

@@ -66,6 +66,20 @@ interface ThemeProviderProps {
 }
 
 /**
+ * Convert a hex color (e.g., #4CAF50) to an rgba string with alpha.
+ * @param hex - Hex color string in the form #RRGGBB
+ * @param alpha - Alpha value between 0 and 1
+ * @returns rgba color string like rgba(76, 175, 80, 0.1)
+ */
+function hexToRgba(hex: string, alpha: number): string {
+  const sanitized = hex.replace('#', '');
+  const r = parseInt(sanitized.substring(0, 2), 16);
+  const g = parseInt(sanitized.substring(2, 4), 16);
+  const b = parseInt(sanitized.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
  * ThemeProvider component that provides consistent theming across all projects
  * Uses Tailwind CSS classes and provides theme context for RTL/LTR support
  * Integrated with the existing i18n system for proper language detection
@@ -92,6 +106,12 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     root.style.setProperty('--gb-button-primary-bg', themeConfig.buttons.primary.backgroundColor);
     root.style.setProperty('--gb-button-primary-hover', themeConfig.buttons.primary.hoverBackgroundColor);
     root.style.setProperty('--gb-button-primary-color', themeConfig.buttons.primary.color);
+    root.style.setProperty('--gb-button-secondary-bg', themeConfig.buttons.secondary.backgroundColor);
+    root.style.setProperty('--gb-button-secondary-hover', themeConfig.buttons.secondary.hoverBackgroundColor);
+    root.style.setProperty('--gb-button-secondary-color', themeConfig.buttons.secondary.color);
+    // Precompute low-opacity backgrounds for text variant hovers
+    root.style.setProperty('--gb-primary-alpha-10', hexToRgba(themeConfig.colors.primary.main, 0.1));
+    root.style.setProperty('--gb-secondary-alpha-10', hexToRgba(themeConfig.colors.secondary.main, 0.1));
   }, []);
 
   /**

@@ -37,15 +37,11 @@ Minimal stub in `openapi.yaml` for auth/OTP endpoints. Expand in later phases.
 English: Run database migrations before starting in staging/production. A `schema_migrations` table tracks applied versions.
 فارسی: پیش از اجرا در استیجینگ/تولید، مهاجرت پایگاه‌داده را اجرا کنید. جدول `schema_migrations` نسخه‌های اعمال‌شده را نگه می‌دارد.
 
-- Postgres:
-  - `DB_DRIVER=postgres POSTGRES_URL=postgres://user:pass@host:5432/db npm run migrate:pg`
+- PostgreSQL (only):
+  - Set `DATABASE_URL` in `.env` to your Postgres connection string.
+  - Run: `npm run migrate` or `npm run migrate:pg`
   - Then seed minimal data: `npm run seed`
-  - فارسی: پس از مهاجرت، برای مقداردهی اولیه: `npm run seed`
-
-- SQLite (development):
-  - `DB_DRIVER=sqlite SQLITE_FILE=./dev.sqlite npm run migrate:sqlite`
-  - Then seed minimal data: `npm run seed`
-  - فارسی: پس از مهاجرت، برای مقداردهی اولیه: `npm run seed`
+  - فارسی: ابتدا `DATABASE_URL` را در `.env` تنظیم کنید، سپس دستور `npm run migrate` و پس از آن `npm run seed` را اجرا کنید.
 
 ## Notes
 - Farsi-first: prefer `fa` defaults and RTL considerations in client-side UIs.

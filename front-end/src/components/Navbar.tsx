@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, LogOut, Languages } from 'lucide-react';
+import { User, LogOut, Languages, ListTree, NotebookPen, FileText, Users as UsersGroup, Boxes, BarChart3, CalendarDays } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { t, applyDir, i18n } from '../i18n';
@@ -8,8 +8,9 @@ import axios from 'axios';
 
 /**
  * Navbar component for the accounting application.
- * Simplified version of the admin navbar with only logo, language toggle, and user menu.
- * Removes all middle navigation menus and dashboard link as requested.
+ * - Logo navigates to Dashboard/root
+ * - Language toggle and user menu on the right
+ * - Middle nav includes icon+label links for main pages (excluding Dashboard)
  */
 const Navbar: React.FC = () => {
   const { isAuthenticated, logout } = useAuth();
@@ -30,7 +31,7 @@ const Navbar: React.FC = () => {
   }, [currentLanguage]);
 
   /**
-   * Handle user logout
+   * Handle user logout and navigate to login page.
    */
   const handleLogout = () => { 
     logout(); 
@@ -38,39 +39,74 @@ const Navbar: React.FC = () => {
   };
 
   /**
-   * Toggle between Farsi and English languages
+   * Toggle between Farsi and English languages.
    */
   const toggleLanguage = () => {
     const newLang = currentLanguage === 'en' ? 'fa' : 'en';
     setCurrentLanguage(newLang);
   };
 
+  /**
+   * Main navigation items with icons (Dashboard excluded; accessible via logo click).
+   * Labels are driven by i18n keys and will render in Farsi or English.
+   */
+  const navItems: { to: string; labelKey: string; fallback: string; Icon: React.ComponentType<any> }[] = [
+    { to: '/codes', labelKey: 'navigation.codes', fallback: 'Codes', Icon: ListTree },
+    { to: '/details', labelKey: 'navigation.details', fallback: 'Details', Icon: ListTree },
+    { to: '/detail-levels', labelKey: 'navigation.detailLevels', fallback: 'Detail Levels', Icon: ListTree },
+    { to: '/journals', labelKey: 'navigation.journals', fallback: 'Journals', Icon: NotebookPen },
+    { to: '/invoices', labelKey: 'navigation.invoices', fallback: 'Invoices', Icon: FileText },
+    { to: '/parties', labelKey: 'navigation.parties', fallback: 'Parties', Icon: UsersGroup },
+    { to: '/warehouses', labelKey: 'navigation.warehouses', fallback: 'Warehouses', Icon: Boxes },
+    { to: '/reports', labelKey: 'navigation.reports', fallback: 'Reports', Icon: BarChart3 },
+    { to: '/fiscal-years', labelKey: 'navigation.fiscalYears', fallback: 'Fiscal Years', Icon: CalendarDays },
+  ];
+
   return (
-    <nav className="text-white shadow-md sticky top-0 z-50" style={{ backgroundColor: 'rgb(4, 131, 63)', paddingInline: '32px', color: '#fff !important', height: '112px', minHeight: '112px', maxHeight: '112px' }}>
-      <div className="max-w-7xl mx-auto px-6 md:px-10 lg:px-12 xl:px-16 relative z-10" style={{ height: '100%' }}>
-        <div className="flex justify-between items-center" style={{ height: '100%', minHeight: '112px' }}>
-          {/* Left: logo only (no middle navigation menus) */}
-          <div className="flex items-center" style={{ height: '100%' }}>
-            <div className="flex items-center justify-center" style={{ height: '100%' }}>
-              <img 
-                src={currentLanguage === 'fa' ? '/green-bunch-logo.png' : '/green-bunch-logo1.png'} 
-                alt="Green Bunch Accounting" 
-                className="block max-w-[220px] max-h-[90px] w-auto h-auto" 
-                style={{ maxHeight: '90px', height: 'auto', width: 'auto' }}
-              />
+    <nav className="text-white shadow-md sticky top-0 z-50" style={{ backgroundColor: 'rgb(4, 131, 63)' }}>
+      <div className="w-full px-0 relative z-10">
+        <div className="flex items-center gap-x-3 h-28 w-full">
+          {/* Left: logo (click navigates to Dashboard/root) */}
+          <div className="flex items-center justify-center h-full">
+            <div className="flex items-center justify-center h-full">
+              <Link to="/" aria-label={t('navigation.dashboard', 'Dashboard')} className="block rtl:mr-2 ltr:ml-2">
+                <img 
+                  src={currentLanguage === 'fa' ? '/green-bunch-logo.png' : '/green-bunch-logo1.png'} 
+                  alt="Green Bunch Accounting" 
+                  className="block max-w-[220px] max-h-[90px] w-auto h-auto" 
+                  style={{ maxHeight: '90px', height: 'auto', width: 'auto' }}
+                />
+              </Link>
             </div>
           </div>
 
+          {/* Middle: page navigation links (icon + label) */}
+          <div className="flex flex-wrap items-center justify-start gap-x-3 gap-y-2 rtl:space-x-reverse text-white h-full ltr:ml-4 rtl:mr-4">
+            {navItems.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                className="text-white hover:text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium transition-colors duration-200 flex items-center bg-transparent"
+                 //  style={{ color: '#fff', backgroundColor: 'transparent', lineHeight: '1.5', fontSize: '14px', height: '40px', border: 'none', outline: 'none' }}
+                 aria-label={t(item.labelKey, item.fallback)}
+                 title={t(item.labelKey, item.fallback)}
+               >
+                 <item.Icon className="h-5 w-5 mr-2 rtl:ml-2 rtl:mr-0" />
+                 {t(item.labelKey, item.fallback)}
+               </Link>
+            ))}
+          </div>
+
           {/* Right: language toggle + profile/logout or login */}
-          <div className="flex items-center space-x-4 rtl:space-x-reverse" style={{ height: '100%' }}>
+          <div className="flex items-center space-x-3 rtl:space-x-reverse h-full ltr:ml-auto rtl:mr-auto rtl:ml-0">
             {isAuthenticated ? (
               <>
                 <motion.button 
                   onClick={toggleLanguage} 
                   className="text-white hover:text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium flex items-center transition-colors duration-200 bg-transparent"
-                  style={{ color: '#fff !important', backgroundColor: 'transparent', lineHeight: '1.5', fontSize: '14px', height: '40px', border: 'none', outline: 'none' }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.98 }}
+                   // style={{ color: '#fff', backgroundColor: 'transparent', lineHeight: '1.5', fontSize: '14px', height: '40px', border: 'none', outline: 'none' }}
+                   whileHover={{ scale: 1.05 }}
+                   whileTap={{ scale: 0.98 }}
                 >
                   <Languages className="h-5 w-5 mr-2 rtl:ml-2 rtl:mr-0" />
                   {currentLanguage === 'en' ? 'فارسی' : 'English'}
@@ -82,21 +118,21 @@ const Navbar: React.FC = () => {
                   <Link 
                     to="/profile" 
                     className="text-white hover:text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium flex items-center transition-colors duration-200 bg-transparent"
-                    style={{ color: '#fff !important', textDecoration: 'none !important', backgroundColor: 'transparent' }}
+                    // style={{ marginLeft:'10px', color: '#fff', textDecoration: 'none', backgroundColor: 'transparent' }}
                   >
                     <User className="h-5 w-5 mr-2 rtl:ml-2 rtl:mr-0" />
-                    {t('navigation.profile', 'Profile')}
+                    {}
                   </Link>
                 </motion.div>
                 <motion.button 
                   onClick={handleLogout} 
                   className="text-white hover:text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium flex items-center transition-colors duration-200 bg-transparent"
-                  style={{ color: '#fff !important', backgroundColor: 'transparent' }}
+                  // style={{ color: '#fff', backgroundColor: 'transparent' }}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.98 }}
                 >
                   <LogOut className="h-5 w-5 mr-2 rtl:ml-2 rtl:mr-0" />
-                  {t('navigation.logout', 'Logout')}
+                  {}
                 </motion.button>
               </>
             ) : (
@@ -104,9 +140,9 @@ const Navbar: React.FC = () => {
                 <motion.button 
                   onClick={toggleLanguage} 
                   className="text-white hover:text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium flex items-center transition-colors duration-200 bg-transparent"
-                  style={{ color: '#fff !important', backgroundColor: 'transparent', lineHeight: '1.5', fontSize: '14px', height: '40px', border: 'none', outline: 'none' }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.98 }}
+                   // style={{ marginLeft: '10px', color: '#fff', backgroundColor: 'transparent', lineHeight: '1.5', fontSize: '14px', height: '40px', border: 'none', outline: 'none' }}
+                   whileHover={{ scale: 1.05 }}
+                   whileTap={{ scale: 0.98 }}
                 >
                   <Languages className="h-5 w-5 mr-2 rtl:ml-2 rtl:mr-0" />
                   {currentLanguage === 'en' ? 'فارسی' : 'English'}
@@ -118,9 +154,9 @@ const Navbar: React.FC = () => {
                   <Link
                     to="/login"
                     className="text-white hover:text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 bg-transparent"
-                    style={{ color: '#fff !important', textDecoration: 'none !important', backgroundColor: 'transparent' }}
+                    // style={{ color: '#fff', textDecoration: 'none', backgroundColor: 'transparent' }}
                   >
-                    {t('navigation.login', 'Login')}
+                    {}
                   </Link>
                 </motion.div>
               </>
@@ -132,25 +168,39 @@ const Navbar: React.FC = () => {
         </div>
       </div>
 
-      {/* Mobile Navigation */}
+      {/* Mobile Navigation with icons */}
       {isMobileMenuOpen && (
-        <div className="md:hidden absolute top-28 left-0 right-0 shadow-lg" style={{ backgroundColor: 'rgb(4, 131, 63)' }}>
+        <div className="md:hidden absolute top-28 left-0 right-0 shadow-lg bg-[rgb(4,131,63)]">
           <div className="px-2 pt-2 pb-3 space-y-1">
             <button 
               onClick={toggleLanguage} 
-              className="w-full text-left text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium flex items-center transition-colors duration-200 bg-transparent"
-              style={{ color: '#fff !important', backgroundColor: 'transparent', lineHeight: '1.5', fontSize: '14px', minHeight: '40px', border: 'none', outline: 'none' }}
+              className="w-full text-left text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium flex items-center transition-colors duration-200 bg-transparent leading-6 text-sm min-h-[40px] border-0 outline-none"
             >
               <Languages className="h-5 w-5 mr-2 rtl:ml-2 rtl:mr-0" />
               {currentLanguage === 'en' ? 'فارسی' : 'English'}
             </button>
+
+            {/* Mobile: page navigation links with icons */}
+            {navItems.map((item) => (
+              <Link 
+                key={item.to}
+                to={item.to}
+                className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium transition-colors duration-200 bg-transparent leading-6 text-sm h-10 border-0 outline-none" 
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                <span className="flex items-center">
+                  <item.Icon className="h-5 w-5 mr-2 rtl:ml-2 rtl:mr-0" />
+                  {t(item.labelKey, item.fallback)}
+                </span>
+              </Link>
+            ))}
 
             {isAuthenticated ? (
               <>
                 <Link 
                   to="/profile" 
                   className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium transition-colors duration-200 bg-transparent" 
-                  style={{ color: '#fff !important', textDecoration: 'none !important', backgroundColor: 'transparent' }}
+                  // style={{ color: '#fff', textDecoration: 'none', backgroundColor: 'transparent' }}
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
                   {t('navigation.profile', 'Profile')}
@@ -158,20 +208,19 @@ const Navbar: React.FC = () => {
                 <button 
                   onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} 
                   className="w-full text-left text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium flex items-center transition-colors duration-200 bg-transparent"
-                  style={{ color: '#fff !important', backgroundColor: 'transparent' }}
+                  // style={{ color: '#fff', backgroundColor: 'transparent' }}
                 >
                   <LogOut className="h-5 w-5 mr-2 rtl:ml-2 rtl:mr-0" />
-                  {t('navigation.logout', 'Logout')}
+                  {}
                 </button>
               </>
             ) : (
               <Link 
                 to="/login" 
-                className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium transition-colors duration-200 bg-transparent" 
-                style={{ color: '#fff !important', textDecoration: 'none !important', backgroundColor: 'transparent' }}
+                className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium transition-colors duration-200 bg-transparent leading-6 text-sm h-10 border-0 outline-none" 
                 onClick={() => setIsMobileMenuOpen(false)}
               >
-                {t('navigation.login', 'Login')}
+                {}
               </Link>
             )}
           </div>

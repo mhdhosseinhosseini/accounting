@@ -14,14 +14,12 @@
     "seed": "ts-node src/scripts/seed.ts",
     "migrate": "ts-node src/scripts/migrate.ts",
     "migrate:pg": "DB_DRIVER=postgres ts-node src/scripts/migrate.ts",
-    "migrate:sqlite": "DB_DRIVER=sqlite ts-node src/scripts/migrate.ts",
     "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "better-sqlite3": "^12.4.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
@@ -32,11 +30,11 @@
     "pg": "^8.16.3",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^13.0.0",
+    "xlsx": "^0.18.5",
     "yaml": "^2.8.1",
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.5",
     "@types/helmet": "^0.0.48",

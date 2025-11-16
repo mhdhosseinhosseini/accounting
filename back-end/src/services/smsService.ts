@@ -20,12 +20,14 @@ export class SMSService {
   private username?: string;
   private password?: string;
   private domain?: string;
+  private devForceDebug: boolean;
 
   constructor() {
     this.baseURL = process.env.MAGFA_SMS_BASE_URL || 'https://sms.magfa.com/api/http/sms/v2/send';
     this.username = process.env.MAGFA_USERNAME;
     this.password = process.env.MAGFA_PASSWORD;
     this.domain = process.env.MAGFA_DOMAIN;
+    this.devForceDebug = String(process.env.DEV_FORCE_DEBUG_OTP || '').toLowerCase() === 'true';
   }
 
   /**
@@ -40,10 +42,20 @@ export class SMSService {
   }
 
   /**
-   * Send a generic SMS message using Magfa when configured, otherwise log.
+   * Send a generic SMS message.
+   * Behavior:
+   * - When DEV_FORCE_DEBUG_OTP=true, bypass Magfa entirely and log the SMS.
+   * - When Magfa credentials are missing, log and return success in development.
+   * - Otherwise, attempt to send via Magfa HTTP API.
    */
   async sendSMS(recipient: string, message: string): Promise<SendResult> {
     const formattedRecipient = this.formatIranMobile(recipient);
+
+    // Bypass SMS sending entirely when DEV_FORCE_DEBUG_OTP=true
+    if (this.devForceDebug) {
+      console.log('[DEV SMS] (forced debug) To:', formattedRecipient, '\nMessage:', message);
+      return { success: true, message: 'SMS bypassed (DEV_FORCE_DEBUG_OTP=true)' };
+    }
 
     // If Magfa credentials are not set, log and return success in dev.
     if (!this.username || !this.password || !this.domain) {

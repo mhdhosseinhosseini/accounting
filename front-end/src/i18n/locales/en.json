@@ -16,13 +16,21 @@
     "loading": "Loading...",
     "error": "Error",
     "success": "Success",
+    "warning": "Warning",
+    "info": "Information",
     "search": "Search",
     "noData": "No data",
     "yes": "Yes",
     "no": "No",
     "all": "All",
     "status": "Status",
-    "currency": "Rial"
+    "currency": "Rial",
+    "none": "None",
+    "showing": "Showing",
+    "to": "to",
+    "of": "of",
+    "totalRow": "results",
+    "actions": "Actions"
   },
   "health": {
     "title": "Service Health",
@@ -30,6 +38,9 @@
   },
   "fetch": {
     "error": "Failed to fetch health status"
+  },
+  "errors": {
+    "unknown": "Unknown error occurred"
   },
   "auth": {
     "title": "Login",
@@ -54,7 +65,19 @@
   "navigation": {
     "login": "Login",
     "profile": "Profile",
-    "logout": "Logout"
+    "logout": "Logout",
+    "dashboard": "Dashboard",
+    "accounts": "Accounts",
+    "journals": "Journals",
+    "invoices": "Invoices",
+    "parties": "Parties",
+    "warehouses": "Warehouses",
+    "reports": "Reports",
+    "codes": "Codes",
+    "fiscalYears": "Fiscal Years",
+    "quickLinks": "Quick Links",
+    "details": "Details",
+    "detailLevels": "Detail Levels"
   },
   "actions": {
     "reset": "Reset",
@@ -62,14 +85,88 @@
     "change": "Change",
     "remove": "Remove",
     "create": "Create",
+    "createUnder": "Create Under",
+    "save": "Save",
+    "delete": "Delete",
     "saving": "Saving...",
     "back": "Back",
     "apply": "Apply",
     "confirm": "Confirm",
+    "confirmDelete": "Are you sure you want to delete?",
     "cancel": "Cancel",
-    "edit": "Edit"
+    "edit": "Edit",
+    "ok": "OK"
+  },
+  "labels": {
+    "root": "Root",
+    "child": "Child",
+    "none": "None"
+  },
+  "pages": {
+    "reports": {
+      "title": "Reports",
+      "filters": "Filters",
+      "trialBalance": "Trial Balance",
+      "balanceSheet": "Balance Sheet",
+      "profitLoss": "Profit & Loss"
+    },
+    "fiscalYears": {
+      "title": "Fiscal Years",
+      "create": "Create Fiscal Year",
+      "list": "Fiscal Years List"
+    },
+    "details": {
+      "title": "Details Manager",
+      "list": "Details List",
+      "create": "Create Detail",
+      "edit": "Edit Detail",
+      "addEdit": "Add/Edit",
+      "linkedLevels": "Linked Detail Levels",
+      "leafOnlyHint": "Only leaf levels can be linked.",
+      "deleteConfirm": "Delete this detail?"
+    },
+    "detailLevels": {
+      "treeTitle": "Detail Levels",
+      "createTitle": "Create Detail Level",
+      "editTitle": "Edit Detail Level",
+      "searchPlaceholder": "Search code or title",
+      "actions": { "createRoot": "Create Root" },
+      "errors": {
+        "rootRequiresSpecific": "Root detail must have a specific code",
+        "nonRootCannotHaveSpecific": "Child detail cannot have a specific code",
+        "codeExists": "Detail level code already exists"
+      }
+    }
+  },
+  "fields": {
+    "fromDate": "From Date",
+    "toDate": "To Date",
+    "fiscalYearId": "Fiscal Year ID",
+    "assets": "Assets",
+    "liabilities": "Liabilities",
+    "equity": "Equity",
+    "revenue": "Revenue",
+    "expense": "Expense",
+    "profit": "Profit",
+    "code": "Code",
+    "name": "Name",
+    "debit": "Debit",
+    "credit": "Credit",
+    "startDate": "Start Date",
+    "endDate": "End Date",
+    "status": "Status",
+    "closed": "Closed",
+    "open": "Open",
+    "title": "Title",
+    "kind": "Kind",
+    "parent": "Parent",
+    "nature": "Nature",
+    "codeId": "Code ID",
+    "specificCode": "Specific Code",
+    "isActive": "Active"
   },
   "validation": {
-    "noItems": "No items to submit"
+    "noItems": "No items to submit",
+    "missingFields": "Please fill all fields"
   }
 }

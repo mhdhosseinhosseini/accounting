@@ -5,6 +5,8 @@ export default {
     './src/**/*.{js,ts,jsx,tsx}',
     '../../admin/src/**/*.{js,ts,jsx,tsx}',
   ],
+  // Force Tailwind utilities to apply with `!important` for precedence over global styles
+  important: true,
   theme: {
     extend: {
       colors: {

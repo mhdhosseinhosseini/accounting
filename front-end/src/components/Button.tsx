@@ -1,5 +1,4 @@
 import React from 'react';
-import { useTheme } from '../theme';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   /**
@@ -25,8 +24,9 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 /**
- * Reusable Button component that follows the theme system
- * Provides consistent styling and behavior across the application
+ * Reusable Button component styled with Tailwind classes and theme CSS variables.
+ * - Removes inline styles and mouse handlers; relies on hover/active classes.
+ * - Uses CSS variables injected by ThemeProvider for colors and hover states.
  */
 export const Button: React.FC<ButtonProps> = ({
   variant = 'primary',
@@ -39,110 +39,59 @@ export const Button: React.FC<ButtonProps> = ({
   style = {},
   ...props
 }) => {
-  const { theme } = useTheme();
-
-  // Size configurations
+  /**
+   * Map size to Tailwind padding and font-size classes.
+   */
   const sizeClasses = {
     small: 'px-3 py-1.5 text-sm',
     medium: 'px-4 py-3 text-base',
     large: 'px-6 py-4 text-lg'
   };
 
-  // Base classes
-  const baseClasses = `
-    font-medium rounded-lg transition-all duration-200 
-    focus:outline-none focus:ring-2 focus:ring-offset-2
-    ${fullWidth ? 'w-full' : ''}
-    ${sizeClasses[size]}
-    ${loading || disabled ? 'cursor-not-allowed' : 'cursor-pointer'}
-    ${className}
-  `.trim().replace(/\s+/g, ' ');
-
-  // Variant styles
-  const getVariantStyles = () => {
-    const isDisabled = disabled || loading;
-    
-    switch (variant) {
+  /**
+   * Return Tailwind classes for the given variant.
+   * Uses CSS variables for colors to avoid inline styles.
+   */
+  function getVariantClassNames(v: NonNullable<ButtonProps['variant']>): string {
+    switch (v) {
       case 'primary':
-        return {
-          backgroundColor: isDisabled ? '#9CA3AF' : theme.colors.primary.main,
-          color: '#ffffff',
-          border: 'none',
-          borderRadius: theme.borderRadius.medium,
-          opacity: loading ? 0.7 : 1,
-          '--tw-ring-color': theme.colors.primary.main
-        };
-      
+        return 'bg-[var(--gb-primary-main)] hover:bg-[var(--gb-primary-dark)] text-white focus:ring-[var(--gb-primary-main)]';
       case 'secondary':
-        return {
-          backgroundColor: isDisabled ? '#9CA3AF' : theme.colors.secondary.main,
-          color: '#ffffff',
-          border: 'none',
-          borderRadius: theme.borderRadius.medium,
-          opacity: loading ? 0.7 : 1,
-          '--tw-ring-color': theme.colors.secondary.main
-        };
-      
+        return 'bg-[var(--gb-secondary-main)] hover:bg-[var(--gb-secondary-dark)] text-white focus:ring-[var(--gb-secondary-main)]';
       case 'outline':
-        return {
-          backgroundColor: 'transparent',
-          color: isDisabled ? '#9CA3AF' : theme.colors.primary.main,
-          border: `1px solid ${isDisabled ? '#9CA3AF' : theme.colors.primary.main}`,
-          borderRadius: theme.borderRadius.medium,
-          opacity: loading ? 0.7 : 1,
-          '--tw-ring-color': theme.colors.primary.main
-        };
-      
+        return 'bg-transparent text-[var(--gb-primary-main)] hover:bg-[var(--gb-primary-light)] hover:text-white border border-[var(--gb-primary-main)] focus:ring-[var(--gb-primary-main)]';
       case 'text':
-        return {
-          backgroundColor: 'transparent',
-          color: isDisabled ? '#9CA3AF' : theme.colors.primary.main,
-          border: 'none',
-          borderRadius: theme.borderRadius.medium,
-          opacity: loading ? 0.7 : 1,
-          '--tw-ring-color': theme.colors.primary.main
-        };
-      
+        return 'bg-transparent text-[var(--gb-primary-main)] hover:bg-[var(--gb-primary-alpha-10)] focus:ring-[var(--gb-primary-main)]';
       default:
-        return {};
+        return '';
     }
-  };
+  }
 
-  // Hover effects
-  const handleMouseEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (disabled || loading) return;
-    
-    switch (variant) {
-      case 'primary':
-        e.currentTarget.style.backgroundColor = theme.colors.primary.dark;
-        break;
-      case 'secondary':
-        e.currentTarget.style.backgroundColor = theme.colors.secondary.dark;
-        break;
-      case 'outline':
-        e.currentTarget.style.backgroundColor = theme.colors.primary.light;
-        e.currentTarget.style.color = '#ffffff';
-        break;
-      case 'text':
-        e.currentTarget.style.backgroundColor = `${theme.colors.primary.main}10`;
-        break;
-    }
-  };
+  const baseClasses = [
+    'font-medium rounded-lg transition-all duration-200',
+    'focus:outline-none focus:ring-2',
+    fullWidth ? 'w-full' : '',
+    sizeClasses[size],
+    loading || disabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer',
+    getVariantClassNames(variant),
+    className
+  ].filter(Boolean).join(' ');
 
-  const handleMouseLeave = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (disabled || loading) return;
-    
-    const styles = getVariantStyles();
-    Object.assign(e.currentTarget.style, styles);
-  };
+  /**
+   * Disabled overrides for primary/secondary variants.
+   * Outline/text rely on text/border gray when disabled.
+   */
+  const disabledClasses = disabled || loading
+    ? (variant === 'primary' || variant === 'secondary'
+        ? 'bg-[#9CA3AF] text-white'
+        : 'text-gray-400 border-gray-400')
+    : '';
 
   return (
     <button
-      className={baseClasses}
-      style={{ ...getVariantStyles(), ...style }}
+      className={[baseClasses, disabledClasses].filter(Boolean).join(' ')}
+      style={style}
       disabled={disabled || loading}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       {...props}
     >
       {loading ? (

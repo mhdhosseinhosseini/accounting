@@ -11,7 +11,14 @@ let schemaReady = false;
 export function getPool(): Pool {
   if (!pool) {
     const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
-    pool = new Pool({ connectionString });
+    // Allow enabling SSL via env for cloud providers (e.g., Liara, Heroku)
+    const enableSsl = String(process.env.PG_SSL || process.env.PGSSL || '').toLowerCase() === 'true'
+      || String(process.env.PGSSLMODE || '').toLowerCase() === 'require';
+    const config: any = { connectionString };
+    if (enableSsl) {
+      config.ssl = { rejectUnauthorized: false };
+    }
+    pool = new Pool(config);
   }
   return pool;
 }
@@ -73,17 +80,179 @@ export async function ensureSchema(): Promise<void> {
     );
   `);
 
+  // Accounts table removed; journal_items now references codes instead of accounts.
+
+  // Details: global 4-digit codes, unique, no prefix
   await p.query(`
-    CREATE TABLE IF NOT EXISTS accounts (
+    CREATE TABLE IF NOT EXISTS details (
       id TEXT PRIMARY KEY,
       code TEXT UNIQUE NOT NULL,
-      name TEXT NOT NULL,
-      parent_id TEXT REFERENCES accounts(id) ON DELETE SET NULL,
-      level INT DEFAULT 0 NOT NULL,
-      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      is_active BOOLEAN DEFAULT TRUE NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
     );
   `);
+
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS detail_levels (
+      id TEXT PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      parent_id TEXT REFERENCES detail_levels(id) ON DELETE SET NULL,
+      specific_code_id TEXT,
+      is_active BOOLEAN DEFAULT TRUE NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+      CONSTRAINT detail_levels_root_specific CHECK (
+        (parent_id IS NULL AND specific_code_id IS NOT NULL)
+        OR (parent_id IS NOT NULL AND specific_code_id IS NULL)
+      )
+    );
+  `);
+
+  // Harden legacy table to include required columns
+  await p.query(`ALTER TABLE IF EXISTS detail_levels ADD COLUMN IF NOT EXISTS code TEXT`);
+  await p.query(`ALTER TABLE IF EXISTS detail_levels ADD COLUMN IF NOT EXISTS title TEXT`);
+  await p.query(`ALTER TABLE IF EXISTS detail_levels ADD COLUMN IF NOT EXISTS specific_code_id TEXT`);
+  await p.query(`ALTER TABLE IF EXISTS detail_levels ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE NOT NULL`);
+  await p.query(`ALTER TABLE IF EXISTS detail_levels ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL`);
+
+  // Ensure parent_id column and its index exist (simpler, resilient on legacy DBs)
+  await p.query(`ALTER TABLE IF EXISTS detail_levels ADD COLUMN IF NOT EXISTS parent_id TEXT`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_detail_levels_parent ON detail_levels(parent_id)`);
+  await p.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname='fk_detail_levels_parent'
+      ) THEN
+        EXECUTE 'ALTER TABLE detail_levels ADD CONSTRAINT fk_detail_levels_parent FOREIGN KEY (parent_id) REFERENCES detail_levels(id) ON DELETE SET NULL';
+      END IF;
+    END $$;
+  `);
+
+  // Join table: details ↔ detail_levels (many-to-many)
+  // - Blocks deletes via RESTRICT to preserve reporting integrity
+  // - Supports optional primary and ordering for future reports
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS details_detail_levels (
+      detail_id TEXT NOT NULL REFERENCES details(id) ON DELETE RESTRICT,
+      detail_level_id TEXT NOT NULL REFERENCES detail_levels(id) ON DELETE RESTRICT,
+      is_primary BOOLEAN DEFAULT FALSE NOT NULL,
+      position INT,
+      created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+      PRIMARY KEY (detail_id, detail_level_id)
+    );
+  `);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_details_detail_levels_detail ON details_detail_levels(detail_id)`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_details_detail_levels_level ON details_detail_levels(detail_level_id)`);
+
+  // Explicit migration: move legacy code_id values into specific_code_id and drop code_id
+  try {
+    const existsProbe = await p.query(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'detail_levels' AND column_name = 'code_id'
+       ) AS exists`
+    );
+    const hasCodeId = !!(existsProbe.rows[0] && existsProbe.rows[0].exists);
+    if (hasCodeId) {
+      await p.query(`UPDATE detail_levels SET specific_code_id = COALESCE(specific_code_id, code_id) WHERE code_id IS NOT NULL`);
+      await p.query(`ALTER TABLE IF EXISTS detail_levels DROP COLUMN IF EXISTS code_id`);
+    }
+  } catch {
+    // Swallow migration error to avoid boot failure on clean DBs
+  }
+  
+  // Explicit migration: drop legacy detail_id column if present
+  try {
+    const detailIdProbe = await p.query(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'detail_levels' AND column_name = 'detail_id'
+       ) AS exists`
+    );
+    const hasDetailId = !!(detailIdProbe.rows[0] && detailIdProbe.rows[0].exists);
+    if (hasDetailId) {
+      // Make nullable first to avoid dependency errors, then drop
+      await p.query(`ALTER TABLE IF EXISTS detail_levels ALTER COLUMN detail_id DROP NOT NULL`);
+      await p.query(`ALTER TABLE IF EXISTS detail_levels DROP COLUMN IF EXISTS detail_id`);
+    }
+  } catch {
+    // Ignore if clean
+  }
+  
+  // Migration block for legacy schemas
+  await p.query(`
+    DO $$
+    BEGIN
+      -- Rename legacy linked_code_id or code_id to specific_code_id
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='detail_levels' AND column_name='linked_code_id'
+      ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='detail_levels' AND column_name='specific_code_id'
+      ) THEN
+        EXECUTE 'ALTER TABLE detail_levels RENAME COLUMN linked_code_id TO specific_code_id';
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='detail_levels' AND column_name='code_id'
+      ) THEN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='detail_levels' AND column_name='specific_code_id'
+        ) THEN
+          EXECUTE 'ALTER TABLE detail_levels RENAME COLUMN code_id TO specific_code_id';
+        ELSE
+          -- Migrate data then drop legacy column
+          EXECUTE 'UPDATE detail_levels SET specific_code_id = COALESCE(specific_code_id, code_id) WHERE code_id IS NOT NULL';
+          EXECUTE 'ALTER TABLE detail_levels DROP COLUMN code_id';
+        END IF;
+      END IF;
+      -- Ensure specific_code_id is nullable on legacy DBs
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='detail_levels' AND column_name='specific_code_id'
+      ) THEN
+        EXECUTE 'ALTER TABLE detail_levels ALTER COLUMN specific_code_id DROP NOT NULL';
+      END IF;
+
+      -- Drop legacy level column
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='detail_levels' AND column_name='level'
+      ) THEN
+        EXECUTE 'ALTER TABLE detail_levels DROP COLUMN level';
+      END IF;
+
+      -- Ensure updated_at column exists
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='detail_levels' AND column_name='updated_at'
+      ) THEN
+        EXECUTE 'ALTER TABLE detail_levels ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL';
+      END IF;
+    END $$;
+  `);
+
+  // Codes: two-level General → Specific tree with optional parent
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS codes (
+      id TEXT PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      parent_id TEXT REFERENCES codes(id) ON DELETE SET NULL,
+      is_active BOOLEAN DEFAULT TRUE NOT NULL,
+      nature INT,
+      created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    );
+  `);
+
+  // Ensure legacy databases also have the 'nature' column
+  await p.query(`ALTER TABLE IF EXISTS codes ADD COLUMN IF NOT EXISTS nature INT`);
 
   await p.query(`
     CREATE TABLE IF NOT EXISTS parties (
@@ -110,7 +279,7 @@ export async function ensureSchema(): Promise<void> {
     CREATE TABLE IF NOT EXISTS warehouses (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      code TEXT UNIQUE NOT NULL,
+      location TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
     );
   `);
@@ -118,10 +287,9 @@ export async function ensureSchema(): Promise<void> {
   await p.query(`
     CREATE TABLE IF NOT EXISTS journals (
       id TEXT PRIMARY KEY,
-      fiscal_year_id TEXT NOT NULL REFERENCES fiscal_years(id) ON DELETE CASCADE,
-      ref_no TEXT,
+      fiscal_year_id TEXT REFERENCES fiscal_years(id) ON DELETE SET NULL,
       date TIMESTAMPTZ NOT NULL,
-      description TEXT,
+      ref_no TEXT,
       status TEXT DEFAULT 'draft' NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
     );
@@ -131,7 +299,7 @@ export async function ensureSchema(): Promise<void> {
     CREATE TABLE IF NOT EXISTS journal_items (
       id TEXT PRIMARY KEY,
       journal_id TEXT NOT NULL REFERENCES journals(id) ON DELETE CASCADE,
-      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+      code_id TEXT NOT NULL REFERENCES codes(id) ON DELETE RESTRICT,
       party_id TEXT REFERENCES parties(id) ON DELETE SET NULL,
       debit NUMERIC(18,2) DEFAULT 0 NOT NULL,
       credit NUMERIC(18,2) DEFAULT 0 NOT NULL,

@@ -5,8 +5,8 @@ English and Farsi guidance for OTP → JWT authentication in the Accounting back
 ## Overview (English)
 - Flow: Request OTP → Verify OTP → Receive `token` (access) + `refreshToken` → Refresh/Logout.
 - Localization: Responses honor `Accept-Language` (`fa` or `en`).
-- Storage: Refresh tokens are persisted in the DB (`refresh_tokens`), and revoked during refresh or logout.
-- Drivers: Works with PostgreSQL or SQLite via the unified driver.
+- Storage: Refresh tokens are persisted in Postgres (`refresh_tokens`), and revoked during refresh or logout.
+- Database: Postgres-only backend; SQLite support has been removed.
 
 ### Endpoints
 - `POST /api/auth/request-otp` — Request a 6-digit OTP for a mobile number.
@@ -59,8 +59,8 @@ curl -X POST http://localhost:4100/api/auth/logout \
 ## راهنمای فارسی
 - جریان: درخواست رمز یکبارمصرف → اعتبارسنجی رمز → دریافت `token` (دسترسی) و `refreshToken` → به‌روزرسانی/خروج.
 - بومی‌سازی: پاسخ‌ها بر اساس `Accept-Language` به فارسی یا انگلیسی برگردانده می‌شوند.
-- ذخیره‌سازی: توکن‌های رفرش در دیتابیس ذخیره می‌شوند و هنگام به‌روزرسانی یا خروج باطل می‌گردند.
-- درایورها: با PostgreSQL یا SQLite از طریق درایور یکپارچه کار می‌کند.
+- ذخیره‌سازی: توکن‌های رفرش در پایگاه داده PostgreSQL (`refresh_tokens`) ذخیره می‌شوند و هنگام به‌روزرسانی یا خروج باطل می‌گردند.
+- پایگاه داده: فقط PostgreSQL؛ پشتیبانی از SQLite حذف شده است.
 
 ### اندپوینت‌ها
 - `POST /api/auth/request-otp` — درخواست رمز ۶ رقمی برای شماره موبایل.

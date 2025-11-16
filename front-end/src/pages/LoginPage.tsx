@@ -148,13 +148,13 @@ export const LoginPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 login-page" style={{ minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
+    <div className="min-h-screen bg-gray-100 login-page">
       <Navbar />
 
-      <div className="w-full flex items-center justify-center py-10" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2.5rem 1rem' }}>
-        <div className="w-full max-w-md bg-white shadow-md rounded-xl p-6" style={{ width: '100%', maxWidth: '28rem', backgroundColor: '#ffffff', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', borderRadius: '0.75rem', padding: '1.5rem' }}>
-          <div className="mb-4 flex items-center gap-2 justify-center" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}>
-            <h1 className="text-xl font-semibold" style={{ fontSize: '1.25rem', fontWeight: '600', color: '#111827' }}>{t('auth.title', 'Login')}</h1>
+      <div className="w-full flex items-center justify-center py-10">
+        <div className="w-full max-w-md bg-white shadow-md rounded-xl p-6">
+          <div className="mb-4 flex items-center gap-2 justify-center">
+            <h1 className="text-xl font-semibold text-gray-900">{t('auth.title', 'Login')}</h1>
           </div>
 
           {devAutoLogin && (
@@ -171,17 +171,7 @@ export const LoginPage: React.FC = () => {
                 value={mobileNumber}
                 onChange={e => setMobileNumber(e.target.value)}
                 placeholder={t('auth.mobile_placeholder', '09xxxxxxxxx')}
-                className="w-full border rounded-lg focus:outline-none focus:ring-2 text-gray-900"
-                style={{ 
-                  border: '1px solid #d1d5db', 
-                  borderRadius: theme.borderRadius.medium, 
-                  padding: '0.75rem 1rem', // Same padding as button (py-3 px-4)
-                  fontSize: '1rem', 
-                  color: '#111827', 
-                  backgroundColor: '#ffffff',
-                  boxSizing: 'border-box',
-                  '--tw-ring-color': theme.colors.primary.main
-                } as React.CSSProperties}
+                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--gb-primary-main)]"
                 inputMode="numeric"
                 dir="ltr"
               />
@@ -191,30 +181,11 @@ export const LoginPage: React.FC = () => {
               <button
                 onClick={requestOtp}
                 disabled={loading}
-                className={`mt-6 w-full rounded-lg font-medium text-white transition-colors duration-200 ${
+                className={`mt-6 w-full rounded-lg font-medium text-white transition-colors duration-200 text-base py-3 px-4 bg-[var(--gb-button-primary-bg)] hover:bg-[var(--gb-button-primary-hover)] ${
                   loading 
                     ? 'opacity-50 cursor-not-allowed' 
                     : ''
                 }`}
-                style={{ 
-                  backgroundColor: theme.buttons.primary.backgroundColor,
-                  color: theme.buttons.primary.color,
-                  fontSize: theme.buttons.primary.fontSize,
-                  fontWeight: theme.buttons.primary.fontWeight,
-                  borderRadius: theme.borderRadius.medium,
-                  padding: '0.875rem 1rem',
-                  border: 'none' // Remove border
-                }}
-                onMouseEnter={(e) => {
-                  if (!loading) {
-                    e.currentTarget.style.backgroundColor = theme.buttons.primary.hoverBackgroundColor;
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!loading) {
-                    e.currentTarget.style.backgroundColor = theme.buttons.primary.backgroundColor;
-                  }
-                }}
               >
                 {loading ? t('auth.sending', 'Sending...') : t('auth.send_code', 'Send Code')}
               </button>
@@ -235,18 +206,7 @@ export const LoginPage: React.FC = () => {
                       onPaste={onPaste}
                       inputMode="numeric"
                       maxLength={1}
-                      className="w-10 h-12 border rounded-lg text-center text-lg focus:outline-none focus:ring-2"
-                      style={{ 
-                        width: '2.5rem', 
-                        height: '3rem', 
-                        border: '1px solid #d1d5db', 
-                        borderRadius: theme.borderRadius.medium, 
-                        textAlign: 'center', 
-                        fontSize: '1.125rem', 
-                        color: '#111827', 
-                        backgroundColor: '#ffffff',
-                        '--tw-ring-color': theme.colors.primary.main
-                      } as React.CSSProperties}
+                      className="w-10 h-12 border border-gray-300 rounded-lg text-center text-lg text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--gb-primary-main)]"
                     />
                 ))}
               </div>
@@ -256,40 +216,18 @@ export const LoginPage: React.FC = () => {
               <button
                 onClick={verifyOtp}
                 disabled={loading}
-                className={`w-full font-medium rounded-lg transition-all duration-200 ${
+                className={`w-full font-medium rounded-lg transition-all duration-200 text-white py-3 px-4 bg-[var(--gb-button-primary-bg)] hover:bg-[var(--gb-button-primary-hover)] ${
                   loading 
                     ? 'opacity-50 cursor-not-allowed' 
                     : ''
                 }`}
-                style={{ 
-                  backgroundColor: theme.buttons.primary.backgroundColor,
-                  color: theme.buttons.primary.color,
-                  fontSize: theme.buttons.primary.fontSize,
-                  fontWeight: theme.buttons.primary.fontWeight,
-                  borderRadius: theme.borderRadius.medium,
-                  padding: '0.875rem 1rem',
-                  border: 'none' // Remove border
-                }}
-                onMouseEnter={(e) => {
-                  if (!loading) {
-                    e.currentTarget.style.backgroundColor = theme.buttons.primary.hoverBackgroundColor;
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!loading) {
-                    e.currentTarget.style.backgroundColor = theme.buttons.primary.backgroundColor;
-                  }
-                }}
               >
                 {loading ? t('auth.verifying', 'Verifying...') : t('auth.verify', 'Verify')}
               </button>
 
               <div className="mt-3 flex justify-between text-sm">
                 <button
-                  className="transition-colors duration-200"
-                  style={{ color: theme.colors.primary.main }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = theme.colors.primary.dark}
-                  onMouseLeave={(e) => e.currentTarget.style.color = theme.colors.primary.main}
+                  className="transition-colors duration-200 text-[var(--gb-primary-main)] hover:text-[var(--gb-primary-dark)]"
                   onClick={() => setStep('mobile')}
                 >
                   {t('auth.change_number', 'Change Number')}
@@ -297,20 +235,7 @@ export const LoginPage: React.FC = () => {
                 <button
                   onClick={requestOtp}
                   disabled={resendCooldown > 0}
-                  className={`transition-colors duration-200 ${resendCooldown > 0 ? 'opacity-50' : ''}`}
-                  style={{ 
-                    color: resendCooldown > 0 ? '#9CA3AF' : theme.colors.primary.main 
-                  }}
-                  onMouseEnter={(e) => {
-                    if (resendCooldown === 0) {
-                      e.currentTarget.style.color = theme.colors.primary.dark;
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (resendCooldown === 0) {
-                      e.currentTarget.style.color = theme.colors.primary.main;
-                    }
-                  }}
+                  className={`transition-colors duration-200 ${resendCooldown > 0 ? 'opacity-50 text-gray-400 cursor-not-allowed' : 'text-[var(--gb-primary-main)] hover:text-[var(--gb-primary-dark)]'}`}
                 >
                   {resendCooldown > 0 ? t('auth.resend_in', `Resend in ${resendCooldown}s`) : t('auth.resend', 'Resend')}
                 </button>

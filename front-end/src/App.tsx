@@ -10,6 +10,17 @@ import { useAuth } from './context/AuthContext';
 import { Home } from './pages/Home';
 import { LoginPage } from './pages/LoginPage';
 
+import JournalsPage from './pages/JournalsPage';
+import InvoicesPage from './pages/InvoicesPage';
+import PartiesPage from './pages/PartiesPage';
+import WarehousesPage from './pages/WarehousesPage';
+import ReportsPage from './pages/ReportsPage';
+import DashboardPage from './pages/DashboardPage';
+import FiscalYearsPage from './pages/FiscalYearsPage';
+import CodesPage from './pages/CodesPage';
+import DetailsPage from './pages/DetailsPage';
+import DetailLevelsPage from './pages/DetailLevelsPage';
+
 function Protected({ children }: { children: React.ReactElement }) {
   const { isAuthenticated } = useAuth();
   return isAuthenticated ? children : <Navigate to="/login" replace />;
@@ -17,6 +28,7 @@ function Protected({ children }: { children: React.ReactElement }) {
 
 export default function App() {
   const lang = getInitialLang();
+  const devAutoLogin = String(import.meta.env.VITE_DEV_AUTO_LOGIN || '').toLowerCase() === 'true';
 
   useEffect(() => {
     applyDir(lang);
@@ -26,8 +38,21 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/" element={<Protected><Home /></Protected>} />
+      <Route path="/login" element={devAutoLogin ? <Navigate to="/" replace /> : <LoginPage />} />
+      {/* Set Dashboard as the root page; Home is no longer the landing page */}
+      <Route path="/" element={<Protected><DashboardPage /></Protected>} />
+      {/* Keep /dashboard for backward compatibility, pointing to the same page */}
+      <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
+
+      <Route path="/codes" element={<Protected><CodesPage /></Protected>} />
+      <Route path="/details" element={<Protected><DetailsPage /></Protected>} />
+      <Route path="/detail-levels" element={<Protected><DetailLevelsPage /></Protected>} />
+      <Route path="/journals" element={<Protected><JournalsPage /></Protected>} />
+      <Route path="/invoices" element={<Protected><InvoicesPage /></Protected>} />
+      <Route path="/parties" element={<Protected><PartiesPage /></Protected>} />
+      <Route path="/warehouses" element={<Protected><WarehousesPage /></Protected>} />
+      <Route path="/reports" element={<Protected><ReportsPage /></Protected>} />
+      <Route path="/fiscal-years" element={<Protected><FiscalYearsPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
