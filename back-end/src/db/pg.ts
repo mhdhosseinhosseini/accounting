@@ -99,21 +99,16 @@ export async function ensureSchema(): Promise<void> {
       code TEXT UNIQUE NOT NULL,
       title TEXT NOT NULL,
       parent_id TEXT REFERENCES detail_levels(id) ON DELETE SET NULL,
-      specific_code_id TEXT,
       is_active BOOLEAN DEFAULT TRUE NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-      updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-      CONSTRAINT detail_levels_root_specific CHECK (
-        (parent_id IS NULL AND specific_code_id IS NOT NULL)
-        OR (parent_id IS NOT NULL AND specific_code_id IS NULL)
-      )
+      updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
     );
   `);
 
   // Harden legacy table to include required columns
   await p.query(`ALTER TABLE IF EXISTS detail_levels ADD COLUMN IF NOT EXISTS code TEXT`);
   await p.query(`ALTER TABLE IF EXISTS detail_levels ADD COLUMN IF NOT EXISTS title TEXT`);
-  await p.query(`ALTER TABLE IF EXISTS detail_levels ADD COLUMN IF NOT EXISTS specific_code_id TEXT`);
+  // Removed legacy specific_code_id column; associations now live in detail_level_specific_codes
   await p.query(`ALTER TABLE IF EXISTS detail_levels ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE NOT NULL`);
   await p.query(`ALTER TABLE IF EXISTS detail_levels ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL`);
 
@@ -186,39 +181,6 @@ export async function ensureSchema(): Promise<void> {
   await p.query(`
     DO $$
     BEGIN
-      -- Rename legacy linked_code_id or code_id to specific_code_id
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name='detail_levels' AND column_name='linked_code_id'
-      ) AND NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name='detail_levels' AND column_name='specific_code_id'
-      ) THEN
-        EXECUTE 'ALTER TABLE detail_levels RENAME COLUMN linked_code_id TO specific_code_id';
-      END IF;
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name='detail_levels' AND column_name='code_id'
-      ) THEN
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name='detail_levels' AND column_name='specific_code_id'
-        ) THEN
-          EXECUTE 'ALTER TABLE detail_levels RENAME COLUMN code_id TO specific_code_id';
-        ELSE
-          -- Migrate data then drop legacy column
-          EXECUTE 'UPDATE detail_levels SET specific_code_id = COALESCE(specific_code_id, code_id) WHERE code_id IS NOT NULL';
-          EXECUTE 'ALTER TABLE detail_levels DROP COLUMN code_id';
-        END IF;
-      END IF;
-      -- Ensure specific_code_id is nullable on legacy DBs
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name='detail_levels' AND column_name='specific_code_id'
-      ) THEN
-        EXECUTE 'ALTER TABLE detail_levels ALTER COLUMN specific_code_id DROP NOT NULL';
-      END IF;
-
       -- Drop legacy level column
       IF EXISTS (
         SELECT 1 FROM information_schema.columns
@@ -284,6 +246,17 @@ export async function ensureSchema(): Promise<void> {
     );
   `);
 
+  // Cost centers: dedicated table
+  await p.query(`
+    CREATE TABLE IF NOT EXISTS cost_centers (
+      id TEXT PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      is_active BOOLEAN DEFAULT TRUE NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    );
+  `);
+
   await p.query(`
     CREATE TABLE IF NOT EXISTS journals (
       id TEXT PRIMARY KEY,
@@ -295,16 +268,52 @@ export async function ensureSchema(): Promise<void> {
     );
   `);
 
+  // Ensure unique ref_no per fiscal year when not null
+  await p.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_journals_fiscal_ref ON journals(fiscal_year_id, ref_no) WHERE ref_no IS NOT NULL;
+  `);
+
   await p.query(`
     CREATE TABLE IF NOT EXISTS journal_items (
       id TEXT PRIMARY KEY,
       journal_id TEXT NOT NULL REFERENCES journals(id) ON DELETE CASCADE,
       code_id TEXT NOT NULL REFERENCES codes(id) ON DELETE RESTRICT,
+      detail_id TEXT REFERENCES details(id) ON DELETE RESTRICT,
+      cost_center_id TEXT REFERENCES cost_centers(id) ON DELETE SET NULL,
       party_id TEXT REFERENCES parties(id) ON DELETE SET NULL,
       debit NUMERIC(18,2) DEFAULT 0 NOT NULL,
       credit NUMERIC(18,2) DEFAULT 0 NOT NULL,
       description TEXT
     );
+  `);
+
+  // Migrate legacy journal_items to add detail_id and cost_center_id with FKs if missing
+  await p.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='journal_items' AND column_name='detail_id'
+      ) THEN
+        EXECUTE 'ALTER TABLE journal_items ADD COLUMN detail_id TEXT';
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='journal_items' AND column_name='cost_center_id'
+      ) THEN
+        EXECUTE 'ALTER TABLE journal_items ADD COLUMN cost_center_id TEXT';
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname='fk_journal_items_detail'
+      ) THEN
+        EXECUTE 'ALTER TABLE journal_items ADD CONSTRAINT fk_journal_items_detail FOREIGN KEY (detail_id) REFERENCES details(id) ON DELETE RESTRICT';
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname='fk_journal_items_cost_center'
+      ) THEN
+        EXECUTE 'ALTER TABLE journal_items ADD CONSTRAINT fk_journal_items_cost_center FOREIGN KEY (cost_center_id) REFERENCES cost_centers(id) ON DELETE SET NULL';
+      END IF;
+    END $$;
   `);
 
   await p.query(`

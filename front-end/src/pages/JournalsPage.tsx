@@ -41,6 +41,18 @@ export const JournalsPage: React.FC = () => {
     { codeId: '', debit: 0, credit: 0 }
   ]);
 
+  // Auto New York form state (no cost centers)
+  const [nyFiscalYearId, setNyFiscalYearId] = useState<string>('');
+  const [nyDate, setNyDate] = useState<string>('');
+  const [nyAmount, setNyAmount] = useState<number>(0);
+  const [nyDebitCodeId, setNyDebitCodeId] = useState<string>('');
+  const [nyCreditCodeId, setNyCreditCodeId] = useState<string>('');
+  const [nyDetailId, setNyDetailId] = useState<string>('');
+  const [nyDescription, setNyDescription] = useState<string>('');
+  const [nyCreating, setNyCreating] = useState<boolean>(false);
+  const [nyMessage, setNyMessage] = useState<string>('');
+  const [nyError, setNyError] = useState<string>('');
+
   /**
    * Fetch journals list from backend.
    */
@@ -90,6 +102,48 @@ export const JournalsPage: React.FC = () => {
       setError(t('common.error', 'Error'));
     } finally {
       setCreating(false);
+    }
+  }
+
+  /**
+   * Create automatic New York journal (two-line, balanced).
+   * Sends required IDs and amount; ignores cost centers per requirement.
+   */
+  async function createAutoNewYork(e: React.FormEvent) {
+    e.preventDefault();
+    setNyError('');
+    setNyMessage('');
+    if (!nyFiscalYearId || !nyDate || nyAmount <= 0 || !nyDebitCodeId || !nyCreditCodeId) {
+      setNyError(t('validation.missingFields', 'Please fill all fields'));
+      return;
+    }
+    setNyCreating(true);
+    try {
+      const body: any = {
+        fiscal_year_id: nyFiscalYearId,
+        date: nyDate,
+        amount: nyAmount,
+        debit_code_id: nyDebitCodeId,
+        credit_code_id: nyCreditCodeId,
+        description: nyDescription || undefined
+      };
+      if (nyDetailId) body.detail_id = nyDetailId;
+      const res = await axios.post(`${config.API_ENDPOINTS.base}/v1/journals/auto/new-york`, body);
+      const msg = res?.data?.message;
+      setNyMessage(msg || t('pages.journals.autoNewYork.success', 'Automatic New York journal created'));
+      await fetchJournals();
+      setNyFiscalYearId('');
+      setNyDate('');
+      setNyAmount(0);
+      setNyDebitCodeId('');
+      setNyCreditCodeId('');
+      setNyDetailId('');
+      setNyDescription('');
+    } catch (e: any) {
+      const msg = e?.response?.data?.error || e?.response?.data?.message;
+      setNyError(msg || t('pages.journals.autoNewYork.error', 'Failed to create automatic journal'));
+    } finally {
+      setNyCreating(false);
     }
   }
 
@@ -174,6 +228,66 @@ export const JournalsPage: React.FC = () => {
               {creating ? t('actions.saving', 'Saving...') : t('actions.create', 'Create')}
             </button>
             {error && <p className="text-red-600">{error}</p>}
+          </form>
+        </section>
+
+        {/* Auto New York journal section */}
+        <section className="bg-white rounded shadow p-4 mb-6">
+          <h2 className="text-lg font-medium mb-2">{t('pages.journals.autoNewYork.title', 'Create Automatic New York Journal')}</h2>
+          <form onSubmit={createAutoNewYork} className="grid grid-cols-1 gap-3">
+            <input
+              type="text"
+              value={nyFiscalYearId}
+              onChange={(e) => setNyFiscalYearId(e.target.value.trim())}
+              placeholder={t('fields.fiscalYearId', 'Fiscal Year ID')}
+              className="border rounded px-3 py-2"
+            />
+            <div>
+              <label className="block text-sm mb-1">{t('fields.date', 'Date')}</label>
+              <JalaliDatePicker value={nyDate} onChange={setNyDate} />
+            </div>
+            <input
+              type="number"
+              value={nyAmount}
+              onChange={(e) => setNyAmount(Number(e.target.value) || 0)}
+              placeholder={t('fields.amount', 'Amount')}
+              className="border rounded px-3 py-2"
+            />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <input
+                type="text"
+                value={nyDebitCodeId}
+                onChange={(e) => setNyDebitCodeId(e.target.value.trim())}
+                placeholder={t('fields.debitCodeId', 'Debit Code ID')}
+                className="border rounded px-3 py-2"
+              />
+              <input
+                type="text"
+                value={nyCreditCodeId}
+                onChange={(e) => setNyCreditCodeId(e.target.value.trim())}
+                placeholder={t('fields.creditCodeId', 'Credit Code ID')}
+                className="border rounded px-3 py-2"
+              />
+              <input
+                type="text"
+                value={nyDetailId}
+                onChange={(e) => setNyDetailId(e.target.value.trim())}
+                placeholder={t('fields.detailId', 'Detail ID')}
+                className="border rounded px-3 py-2"
+              />
+            </div>
+            <input
+              type="text"
+              value={nyDescription}
+              onChange={(e) => setNyDescription(e.target.value)}
+              placeholder={t('fields.description', 'Description')}
+              className="border rounded px-3 py-2"
+            />
+            <button type="submit" disabled={nyCreating} className="bg-indigo-700 text-white rounded px-4 py-2">
+              {nyCreating ? t('actions.saving', 'Saving...') : t('pages.journals.autoNewYork.create', 'Create Auto NY')}
+            </button>
+            {nyMessage && <p className="text-green-700">{nyMessage}</p>}
+            {nyError && <p className="text-red-600">{nyError}</p>}
           </form>
         </section>
 

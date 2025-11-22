@@ -14,12 +14,14 @@ import JournalsPage from './pages/JournalsPage';
 import InvoicesPage from './pages/InvoicesPage';
 import PartiesPage from './pages/PartiesPage';
 import WarehousesPage from './pages/WarehousesPage';
-import ReportsPage from './pages/ReportsPage';
+// removed: import ReportsPage from './pages/ReportsPage';
 import DashboardPage from './pages/DashboardPage';
 import FiscalYearsPage from './pages/FiscalYearsPage';
 import CodesPage from './pages/CodesPage';
 import DetailsPage from './pages/DetailsPage';
 import DetailLevelsPage from './pages/DetailLevelsPage';
+import DocumentsPage from './pages/DocumentsPage';
+import DocumentFormPage from './pages/DocumentFormPage';
 
 function Protected({ children }: { children: React.ReactElement }) {
   const { isAuthenticated } = useAuth();
@@ -38,7 +40,7 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={devAutoLogin ? <Navigate to="/" replace /> : <LoginPage />} />
+      <Route path="/login" element={<LoginPage />} />
       {/* Set Dashboard as the root page; Home is no longer the landing page */}
       <Route path="/" element={<Protected><DashboardPage /></Protected>} />
       {/* Keep /dashboard for backward compatibility, pointing to the same page */}
@@ -51,8 +53,11 @@ export default function App() {
       <Route path="/invoices" element={<Protected><InvoicesPage /></Protected>} />
       <Route path="/parties" element={<Protected><PartiesPage /></Protected>} />
       <Route path="/warehouses" element={<Protected><WarehousesPage /></Protected>} />
-      <Route path="/reports" element={<Protected><ReportsPage /></Protected>} />
+      {/* Removed /reports route while rebuilding reports from scratch */}
+      {/* <Route path="/reports" element={<Protected><ReportsPage /></Protected>} /> */}
       <Route path="/fiscal-years" element={<Protected><FiscalYearsPage /></Protected>} />
+      <Route path="/documents" element={<Protected><DocumentsPage /></Protected>} />
+      <Route path="/documents/new" element={<Protected><DocumentFormPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -155,7 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     token,
     loginWithTokenAndUser,
     logout,
-    isAuthenticated: devAutoLogin || !!token,
+    isAuthenticated: !!token,
   };
 
   // During dev bootstrap, hold off rendering children to avoid premature requests

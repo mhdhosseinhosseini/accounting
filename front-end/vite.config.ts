@@ -6,7 +6,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  server: { port: 5176 },
+  server: {
+    port: 5176,
+    fs: { allow: ['/Users/hsn/project/reacts/greenbunch/greenbunch'] }
+  },
   plugins: [react()],
   resolve: {
     dedupe: ['react','react-dom','react-router','react-router-dom']

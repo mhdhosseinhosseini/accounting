@@ -22,6 +22,8 @@ export interface JalaliDatePickerProps {
   placeholder?: string;
   /** Optional className for input */
   inputClassName?: string;
+  /** Disable input interaction */
+  disabled?: boolean;
 }
 
 /**
@@ -29,11 +31,10 @@ export interface JalaliDatePickerProps {
  */
 function toDateObject(val?: string | Date): DateObject | undefined {
   if (!val) return undefined;
-  if (val instanceof Date) return new DateObject(val);
-  // Assume ISO YYYY-MM-DD
+  const isFa = getCurrentLang() === 'fa';
   try {
-    const [y, m, d] = val.split('-').map(Number);
-    return new DateObject({ year: y, month: m, day: d });
+    const obj = val instanceof Date ? new DateObject(val) : new DateObject(val as string);
+    return obj.convert(isFa ? persian : gregorian);
   } catch {
     return undefined;
   }
@@ -58,7 +59,7 @@ function toIso(date: DateObject | Date | string | null): string {
   return `${y}-${m}-${d}`;
 }
 
-export const JalaliDatePicker: React.FC<JalaliDatePickerProps> = ({ value, onChange, placeholder, inputClassName }) => {
+export const JalaliDatePicker: React.FC<JalaliDatePickerProps> = ({ value, onChange, placeholder, inputClassName, disabled }) => {
   const lang = getCurrentLang();
   const isFa = lang === 'fa';
 
@@ -71,6 +72,7 @@ export const JalaliDatePicker: React.FC<JalaliDatePickerProps> = ({ value, onCha
       inputClass={inputClassName || 'w-full border rounded-lg px-3 py-2'}
       placeholder={placeholder || (isFa ? 'تاریخ' : 'Date')}
       calendarPosition={isFa ? 'bottom-right' : 'bottom-left'}
+      disabled={!!disabled}
       onChange={(val: unknown) => {
         const iso = toIso(val as DateObject);
         onChange(iso);

@@ -7,7 +7,7 @@
  * - Accept-Language header is used to localize responses (fa/en).
  * - In-memory store resets on server restart; suitable for development environments.
  */
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { smsService } from '../services/smsService';
 import jwt from 'jsonwebtoken';
@@ -22,7 +22,9 @@ const router = Router();
 // OTP request rate limiter using env-configured max per minute
 /**
  * Protect OTP endpoint from abuse with a simple rate limiter per IP.
+ * Allow disabling in development via DISABLE_OTP_RATE_LIMIT=true
  */
+const disableOtpRateLimit = String(process.env.DISABLE_OTP_RATE_LIMIT || '').toLowerCase() === 'true';
 const otpLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: parseInt(process.env.RATE_LIMIT_REQUEST_OTP_PER_MIN ?? '5', 10),
@@ -30,6 +32,7 @@ const otpLimiter = rateLimit({
   legacyHeaders: false,
   message: (req: Request) => ({ ok: false, message: t('auth.tooManyRequests', getLang(req)) }),
 });
+const otpLimiterMiddleware = disableOtpRateLimit ? ((req: Request, res: Response, next: NextFunction) => next()) : otpLimiter;
 
 /**
  * Additional per-mobile rate limit to reduce OTP abuse.
@@ -105,7 +108,7 @@ function getLang(req: Request): Lang {
  * - In development (no SMS configured): logs failure and returns ok with debugCode.
  * Responses are localized based on the Accept-Language header (fa/en).
  */
-router.post('/request-otp', otpLimiter, async (req: Request, res: Response) => {
+router.post('/request-otp', otpLimiterMiddleware, async (req: Request, res: Response) => {
   const lang: Lang = (req as any).lang || getLang(req);
   const parse = z.object({ mobileNumber: z.string().regex(/^09\d{9}$/) }).safeParse(req.body);
   if (!parse.success) {
@@ -113,15 +116,17 @@ router.post('/request-otp', otpLimiter, async (req: Request, res: Response) => {
   }
   const { mobileNumber } = parse.data;
 
-  // Per-mobile limiter
-  const now = Date.now();
-  const mEntry = mobileLimits.get(mobileNumber);
-  if (!mEntry || now > mEntry.resetAt) {
-    mobileLimits.set(mobileNumber, { count: 1, resetAt: now + mobileWindowMs });
-  } else if (mEntry.count >= mobileMax) {
-    return res.status(429).json({ ok: false, message: t('auth.tooManyRequests', lang) });
-  } else {
-    mEntry.count += 1;
+  // Per-mobile limiter (skip when DISABLE_OTP_RATE_LIMIT=true)
+  if (!disableOtpRateLimit) {
+    const now = Date.now();
+    const mEntry = mobileLimits.get(mobileNumber);
+    if (!mEntry || now > mEntry.resetAt) {
+      mobileLimits.set(mobileNumber, { count: 1, resetAt: now + mobileWindowMs });
+    } else if (mEntry.count >= mobileMax) {
+      return res.status(429).json({ ok: false, message: t('auth.tooManyRequests', lang) });
+    } else {
+      mEntry.count += 1;
+    }
   }
 
   // Determine if SMS provider is configured (production behavior)

@@ -29,6 +29,8 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import SearchIcon from '@mui/icons-material/Search';
 import config from '../config';
 
+import SpecificCodesDualList, { DualListOption } from '../components/common/SpecificCodesDualList';
+
 /**
  * Detail level item interface aligned with backend response.
  */
@@ -37,7 +39,7 @@ interface DetailLevelItem {
   code: string;
   title: string;
   parent_id: string | null;
-  specific_code_id?: string | null;
+  specific_code_ids?: string[];
   children?: DetailLevelItem[];
 }
 
@@ -57,7 +59,7 @@ interface DetailLevelPayload {
   code: string;
   title: string;
   parent_id: string | null;
-  specific_code_id?: string | null;
+  specific_code_ids?: string[];
 }
 
 /**
@@ -101,8 +103,7 @@ function normalizeDigits(input: string): string {
 
 /**
  * DetailLevelsPage presents a tree of detail levels with create/edit forms.
- * - Root detail levels must link to a specific coding code.
- * - Child detail levels must not link to a specific code.
+ * - Detail levels may optionally associate with multiple specific coding codes.
  * - Parent selection is optional; selecting one creates a child under it.
  */
 const DetailLevelsPage: React.FC = () => {
@@ -121,14 +122,14 @@ const DetailLevelsPage: React.FC = () => {
     code: '',
     title: '',
     parent_id: null,
-    specific_code_id: null,
+    specific_code_ids: [],
   });
 
   const [editForm, setEditForm] = useState<DetailLevelPayload>({
     code: '',
     title: '',
     parent_id: null,
-    specific_code_id: null,
+    specific_code_ids: [],
   });
 
   const lang = useMemo(() => i18n.language || 'fa', [i18n.language]);
@@ -206,7 +207,7 @@ const DetailLevelsPage: React.FC = () => {
       code: '',
       title: '',
       parent_id: parentId,
-      specific_code_id: parentId ? null : null,
+      specific_code_ids: [],
     });
   }
 
@@ -220,14 +221,13 @@ const DetailLevelsPage: React.FC = () => {
       code: item.code || '',
       title: item.title || '',
       parent_id: item.parent_id || null,
-      specific_code_id: item.specific_code_id || null,
+      specific_code_ids: item.specific_code_ids || [],
     });
   }
 
   /**
    * Creates a new detail level with client-side validation.
-   * - If parent_id is null, specific_code_id MUST be provided.
-   * - If parent_id is non-null, specific_code_id MUST be null.
+   * - Detail level may optionally link to multiple specific coding codes.
    * - Submission is triggered by the gb-styled create form (CodesPage colors).
    */
   async function handleCreate() {
@@ -235,20 +235,11 @@ const DetailLevelsPage: React.FC = () => {
       code: normalizeDigits(createForm.code.trim()),
       title: createForm.title.trim(),
       parent_id: createForm.parent_id,
-      specific_code_id: createForm.parent_id ? null : createForm.specific_code_id || null,
+      specific_code_ids: createForm.specific_code_ids || [],
     };
 
     if (!payload.title || !payload.code) {
       alert(t('validation.requiredFields'));
-      return;
-    }
-
-    if (!payload.parent_id && !payload.specific_code_id) {
-      alert(t('pages.detailLevels.errors.rootRequiresSpecific'));
-      return;
-    }
-    if (!!payload.parent_id && !!payload.specific_code_id) {
-      alert(t('pages.detailLevels.errors.nonRootCannotHaveSpecific'));
       return;
     }
 
@@ -279,19 +270,11 @@ const DetailLevelsPage: React.FC = () => {
       code: normalizeDigits(editForm.code.trim()),
       title: editForm.title.trim(),
       parent_id: editForm.parent_id,
-      specific_code_id: editForm.parent_id ? null : editForm.specific_code_id || null,
+      specific_code_ids: editForm.specific_code_ids || [],
     };
 
     if (!payload.title || !payload.code) {
       alert(t('validation.requiredFields'));
-      return;
-    }
-    if (!payload.parent_id && !payload.specific_code_id) {
-      alert(t('pages.detailLevels.errors.rootRequiresSpecific'));
-      return;
-    }
-    if (!!payload.parent_id && !!payload.specific_code_id) {
-      alert(t('pages.detailLevels.errors.nonRootCannotHaveSpecific'));
       return;
     }
 
@@ -355,11 +338,11 @@ const DetailLevelsPage: React.FC = () => {
                 className="group"
                 secondaryAction={
                   <Box className="opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-150">
-                    <Tooltip title={t('actions.createUnder')}>
+                    {/* <Tooltip title={t('actions.createUnder')}>
                       <IconButton size="small" onClick={() => startCreateUnder(node.id)}>
                         <AddCircleOutlineIcon fontSize="small" sx={{ color: '#2563eb' }} />
                       </IconButton>
-                    </Tooltip>
+                    </Tooltip> */}
                     <Tooltip title={t('actions.edit')}>
                       <IconButton size="small" onClick={() => startEdit(node)}>
                         <EditIcon fontSize="small" sx={{ color: '#16a34a' }} />
@@ -422,12 +405,15 @@ const DetailLevelsPage: React.FC = () => {
   }
 
   const filteredTree = useMemo(() => filterNodes(tree, query), [tree, query]);
-
+  const SHOW_PARENT_FIELD = false;
+  const dualListOptions: DualListOption[] = useMemo(() => (
+    specificCodes.map((c) => ({ id: c.id, code: String(c.code), title: String(c.title), name: `${c.code} — ${c.title}` }))
+  ), [specificCodes]);
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <Navbar />
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+      <main className="max-w-none w-full mx-auto px-0 md:px-1 py-4">
+        <Box sx={{ display: 'grid', gridTemplateColumns: '0.7fr 1.3fr', gap: 2 }}>
           {/* Left: Tree and search */}
           <Card>
             <CardContent>
@@ -488,7 +474,7 @@ const DetailLevelsPage: React.FC = () => {
 
                       <div className="grid grid-cols-2 gap-4">
                         {/* Parent selector shows only when no specific code is chosen */}
-                        {!createForm.specific_code_id && (
+                        {SHOW_PARENT_FIELD && (
                           <div>
                             <label className="block text-sm text-gray-600 mb-1">{t('fields.parent')}</label>
                             <select
@@ -498,7 +484,7 @@ const DetailLevelsPage: React.FC = () => {
                                 setCreateForm({
                                   ...createForm,
                                   parent_id: v ? v : null,
-                                  specific_code_id: v ? null : createForm.specific_code_id,
+                                  specific_code_ids: v ? [] : (createForm.specific_code_ids || []),
                                 });
                               }}
                               className="gb-select w-full"
@@ -511,29 +497,17 @@ const DetailLevelsPage: React.FC = () => {
                           </div>
                         )}
 
-                        {/* Specific code selector shows only when no parent is chosen; choosing specific hides parent */}
-                        {!createForm.parent_id && (
-                          <div>
-                            <label className="block text-sm text-gray-600 mb-1">{t('fields.specificCode')}</label>
-                            <select
-                              value={createForm.specific_code_id ?? ''}
-                              onChange={(e) => {
-                                const v = e.target.value || '';
-                                setCreateForm({
-                                  ...createForm,
-                                  specific_code_id: v ? v : null,
-                                  parent_id: v ? null : createForm.parent_id,
-                                });
-                              }}
-                              className="gb-select w-full"
-                            >
-                              <option value="">{t('labels.none')}</option>
-                              {specificCodes.map((c) => (
-                                <option key={c.id} value={c.id}>{`${c.code} — ${c.title}`}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
+                        {/* Specific codes multi-select */}
+                        <div className="col-span-2">
+                          <SpecificCodesDualList
+                            options={dualListOptions}
+                            selectedIds={createForm.specific_code_ids || []}
+                            onChange={(ids) => setCreateForm({ ...createForm, specific_code_ids: ids.map(String) })}
+                            leftLabel={t('pages.detailLevels.selectSpecificCode', 'Select Specific Code')}
+                            rightLabel={t('pages.detailLevels.selectedCodesList', 'Selected Specific Codes')}
+                            placeholder={t('pages.codes.codeOrTitle', 'Search code or title')}
+                          />
+                        </div>
                       </div>
 
                       <div className="flex pt-2">
@@ -548,7 +522,7 @@ const DetailLevelsPage: React.FC = () => {
                 <>
                   <Typography variant="h6">{t('pages.detailLevels.editTitle')}</Typography>
                   {/* Edit form styled like CodesPage: gb-input/select/button with primary/secondary colors; highlighted amber in edit mode */}
-                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 gb-card">
+                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 gb-card">
                      <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); handleUpdate(); }}>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -576,7 +550,7 @@ const DetailLevelsPage: React.FC = () => {
                       </div>
 
                       {/* Parent selection (only for non-root items) */}
-                      {!!editForm.parent_id && (
+                      {SHOW_PARENT_FIELD && !!editForm.parent_id && (
                         <div>
                           <label className="block text-sm text-gray-600 mb-1">{t('fields.parent')}</label>
                           <select
@@ -586,7 +560,7 @@ const DetailLevelsPage: React.FC = () => {
                               setEditForm({
                                 ...editForm,
                                 parent_id: v ? v : null,
-                                specific_code_id: v ? null : editForm.specific_code_id,
+                                specific_code_ids: v ? [] : editForm.specific_code_ids,
                               });
                             }}
                             className="gb-select w-full"
@@ -599,25 +573,17 @@ const DetailLevelsPage: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Specific code selection (only for root) */}
-                      {!editForm.parent_id && (
-                        <div>
-                          <label className="block text-sm text-gray-600 mb-1">{t('fields.specificCode')}</label>
-                          <select
-                            value={editForm.specific_code_id ?? ''}
-                            onChange={(e) => {
-                              const v = e.target.value || '';
-                              setEditForm({ ...editForm, specific_code_id: v ? v : null });
-                            }}
-                            className="gb-select w-full"
-                          >
-                            <option value="">{t('labels.none')}</option>
-                            {specificCodes.map((c) => (
-                              <option key={c.id} value={c.id}>{`${c.code} — ${c.title}`}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
+                      {/* Specific codes multi-select (edit) */}
+                      <div className="col-span-2">
+                        <SpecificCodesDualList
+                          options={dualListOptions}
+                          selectedIds={editForm.specific_code_ids || []}
+                          onChange={(ids) => setEditForm({ ...editForm, specific_code_ids: ids.map(String) })}
+                          leftLabel={t('pages.detailLevels.selectSpecificCode', 'Select Specific Code')}
+                          rightLabel={t('pages.detailLevels.selectedCodesList', 'Selected Specific Codes')}
+                          placeholder={t('pages.codes.codeOrTitle', 'Search code or title')}
+                        />
+                      </div>
 
                       <div className="flex gap-3 pt-2">
                         <button type="submit" className="gb-button gb-button-primary">

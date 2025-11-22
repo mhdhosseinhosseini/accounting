@@ -55,10 +55,10 @@ const Navbar: React.FC = () => {
     { to: '/details', labelKey: 'navigation.details', fallback: 'Details', Icon: ListTree },
     { to: '/detail-levels', labelKey: 'navigation.detailLevels', fallback: 'Detail Levels', Icon: ListTree },
     { to: '/journals', labelKey: 'navigation.journals', fallback: 'Journals', Icon: NotebookPen },
+    { to: '/documents', labelKey: 'navigation.documents', fallback: 'Documents', Icon: FileText },
     { to: '/invoices', labelKey: 'navigation.invoices', fallback: 'Invoices', Icon: FileText },
     { to: '/parties', labelKey: 'navigation.parties', fallback: 'Parties', Icon: UsersGroup },
     { to: '/warehouses', labelKey: 'navigation.warehouses', fallback: 'Warehouses', Icon: Boxes },
-    { to: '/reports', labelKey: 'navigation.reports', fallback: 'Reports', Icon: BarChart3 },
     { to: '/fiscal-years', labelKey: 'navigation.fiscalYears', fallback: 'Fiscal Years', Icon: CalendarDays },
   ];
 

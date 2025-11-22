@@ -27,6 +27,7 @@ interface MultiSelectProps {
   options: MultiSelectOption[];
   minWidth?: number;
   placeholder?: string;
+  size?: 'small' | 'medium';
 }
 
 /**
@@ -39,8 +40,10 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
   options,
   minWidth = 150,
   placeholder,
+  size = 'medium',
 }) => {
   /**
+   * handleChange
    * Handle change event from MUI Select (multiple mode).
    * Converts string or string[] into string[] for the consumer.
    */
@@ -50,13 +53,13 @@ const MultiSelect: React.FC<MultiSelectProps> = ({
   };
 
   return (
-    <FormControl sx={{ minWidth }}>
+    <FormControl sx={{ minWidth }} size={size}>
       <InputLabel>{label}</InputLabel>
       <Select
         multiple
         value={value}
         onChange={handleChange}
-        input={<OutlinedInput label={label} />}
+        input={<OutlinedInput label={label} size={size} />}
         renderValue={(selected) => (
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
             {(selected as string[]).map((selectedValue) => {

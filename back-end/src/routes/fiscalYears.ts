@@ -30,13 +30,25 @@ const fiscalYearUpdateSchema = z.object({
 
 /**
  * GET / - List fiscal years.
+ * Includes `has_documents` boolean for UI to hide delete when needed.
  */
 fiscalYearsRouter.get('/', async (req: Request, res: Response) => {
   const lang: Lang = (req as any).lang || 'en';
   try {
     // Postgres-only list implementation
     const p = getPool();
-    const r = await p.query(`SELECT id, name, start_date, end_date, is_closed FROM fiscal_years ORDER BY start_date DESC`);
+    const r = await p.query(`
+      SELECT
+        fy.id,
+        fy.name,
+        fy.start_date,
+        fy.end_date,
+        fy.is_closed,
+        (EXISTS(SELECT 1 FROM journals j WHERE j.fiscal_year_id = fy.id)
+         OR EXISTS(SELECT 1 FROM invoices i WHERE i.fiscal_year_id = fy.id)) AS has_documents
+      FROM fiscal_years fy
+      ORDER BY fy.start_date DESC
+    `);
     return res.json({ items: r.rows, message: t('fiscalYears.list', lang) });
   } catch {
     return res.status(500).json({ ok: false, error: t('error.generic', lang) });
@@ -62,6 +74,7 @@ fiscalYearsRouter.get('/:id', async (req: Request, res: Response) => {
 
 /**
  * POST / - Create a fiscal year.
+ * Default: new fiscal years are created closed (is_closed = TRUE).
  */
 fiscalYearsRouter.post('/', async (req: Request, res: Response) => {
   const lang: Lang = (req as any).lang || 'en';
@@ -73,7 +86,7 @@ fiscalYearsRouter.post('/', async (req: Request, res: Response) => {
   try {
     // Postgres-only create implementation
     const p = getPool();
-    await p.query(`INSERT INTO fiscal_years (id, name, start_date, end_date, is_closed) VALUES ($1, $2, $3, $4, FALSE)`, [id, name, start_date, end_date]);
+    await p.query(`INSERT INTO fiscal_years (id, name, start_date, end_date, is_closed) VALUES ($1, $2, $3, $4, TRUE)`, [id, name, start_date, end_date]);
     return res.status(201).json({ id, message: t('fiscalYears.created', lang) });
   } catch {
     return res.status(500).json({ ok: false, error: t('error.generic', lang) });
@@ -82,6 +95,7 @@ fiscalYearsRouter.post('/', async (req: Request, res: Response) => {
 
 /**
  * PATCH /:id - Update a fiscal year.
+ * - If the fiscal year has documents, dates cannot be edited.
  */
 fiscalYearsRouter.patch('/:id', async (req: Request, res: Response) => {
   const lang: Lang = (req as any).lang || 'en';
@@ -91,8 +105,21 @@ fiscalYearsRouter.patch('/:id', async (req: Request, res: Response) => {
   const { name, start_date, end_date } = parse.data;
   if (start_date && end_date && new Date(start_date) > new Date(end_date)) return res.status(400).json({ ok: false, error: t('fiscalYears.invalidRange', lang) });
   try {
-    // Postgres-only update implementation
     const p = getPool();
+
+    // Guard: if dates are being edited and fiscal year has documents, block
+    if (start_date || end_date) {
+      const dep = await p.query(
+        `SELECT (EXISTS(SELECT 1 FROM journals WHERE fiscal_year_id = $1)
+                 OR EXISTS(SELECT 1 FROM invoices WHERE fiscal_year_id = $1)) AS has_documents`,
+        [id]
+      );
+      if (dep.rows[0]?.has_documents) {
+        return res.status(409).json({ ok: false, error: t('fiscalYears.cannotEditDatesWithDocuments', lang) });
+      }
+    }
+
+    // Postgres-only update implementation
     const r = await p.query(`UPDATE fiscal_years SET name = COALESCE($1, name), start_date = COALESCE($2, start_date), end_date = COALESCE($3, end_date) WHERE id = $4 RETURNING id`, [name ?? null, start_date ?? null, end_date ?? null, id]);
     if (r.rowCount === 0) return res.status(404).json({ ok: false, error: t('fiscalYears.notFound', lang) });
     return res.json({ id, message: t('fiscalYears.updated', lang) });
@@ -114,6 +141,35 @@ fiscalYearsRouter.post('/:id/close', async (req: Request, res: Response) => {
     if (r.rowCount === 0) return res.status(404).json({ ok: false, error: t('fiscalYears.notFound', lang) });
     return res.json({ id, message: t('fiscalYears.closed', lang) });
   } catch {
+    return res.status(500).json({ ok: false, error: t('error.generic', lang) });
+  }
+});
+
+/**
+ * POST /:id/open - Open a fiscal year exclusively (close all others).
+ * Ensures only one open fiscal year exists at any time.
+ */
+fiscalYearsRouter.post('/:id/open', async (req: Request, res: Response) => {
+  const lang: Lang = (req as any).lang || 'en';
+  const { id } = req.params;
+  const p = getPool();
+  try {
+    // Verify existence and current state
+    const r0 = await p.query(`SELECT id, is_closed FROM fiscal_years WHERE id = $1`, [id]);
+    if (r0.rowCount === 0) return res.status(404).json({ ok: false, error: t('fiscalYears.notFound', lang) });
+    const row = r0.rows[0] as any;
+    if (row.is_closed === false) {
+      return res.json({ id, message: t('fiscalYears.alreadyOpen', lang) });
+    }
+    // Perform exclusive open within a transaction
+    await p.query('BEGIN');
+    await p.query(`UPDATE fiscal_years SET is_closed = TRUE WHERE id <> $1`, [id]);
+    const r = await p.query(`UPDATE fiscal_years SET is_closed = FALSE WHERE id = $1 RETURNING id`, [id]);
+    await p.query('COMMIT');
+    if (r.rowCount === 0) return res.status(404).json({ ok: false, error: t('fiscalYears.notFound', lang) });
+    return res.json({ id, message: t('fiscalYears.opened', lang) });
+  } catch (e) {
+    try { await p.query('ROLLBACK'); } catch {}
     return res.status(500).json({ ok: false, error: t('error.generic', lang) });
   }
 });
@@ -159,6 +215,56 @@ fiscalYearsRouter.post('/:id/open-next', async (req: Request, res: Response) => 
     await p.query(`INSERT INTO fiscal_years (id, name, start_date, end_date, is_closed) VALUES ($1, $2, $3, $4, FALSE)`, [newId, nextName, nextStartStr, nextEndStr]);
     return res.status(201).json({ id: newId, message: t('fiscalYears.openedNext', lang) });
   } catch {
+    return res.status(500).json({ ok: false, error: t('error.generic', lang) });
+  }
+});
+
+/**
+ * DELETE /:id - Delete a fiscal year.
+ * Prevents deletion if any journals or invoices exist for the fiscal year.
+ * If allowed, cascades opening/closing entries; other documents set fiscal_year_id NULL.
+ */
+fiscalYearsRouter.delete('/:id', async (req: Request, res: Response) => {
+  const lang: Lang = (req as any).lang || 'en';
+  const { id } = req.params;
+  const p = getPool();
+  try {
+    // Begin transaction: we may need to reassign the open fiscal year
+    await p.query('BEGIN');
+    const r0 = await p.query(`SELECT id, start_date, is_closed FROM fiscal_years WHERE id = $1 FOR UPDATE`, [id]);
+    if (r0.rowCount === 0) { await p.query('ROLLBACK'); return res.status(404).json({ ok: false, error: t('fiscalYears.notFound', lang) }); }
+    const dep = await p.query(
+      `SELECT (EXISTS(SELECT 1 FROM journals WHERE fiscal_year_id = $1)
+               OR EXISTS(SELECT 1 FROM invoices WHERE fiscal_year_id = $1)) AS has_documents`,
+      [id]
+    );
+    if (dep.rows[0]?.has_documents) {
+      await p.query('ROLLBACK');
+      return res.status(409).json({ ok: false, error: t('fiscalYears.hasDocuments', lang) });
+    }
+    const row = r0.rows[0] as any;
+    const wasOpen = row.is_closed === false;
+    let fallbackId: string | null = null;
+    if (wasOpen) {
+      const prevRes = await p.query(`SELECT id FROM fiscal_years WHERE start_date < $1 ORDER BY start_date DESC LIMIT 1`, [row.start_date]);
+      if ((prevRes.rowCount ?? 0) > 0) {
+        fallbackId = prevRes.rows[0].id;
+      } else {
+        const nextRes = await p.query(`SELECT id FROM fiscal_years WHERE start_date > $1 ORDER BY start_date ASC LIMIT 1`, [row.start_date]);
+        if ((nextRes.rowCount ?? 0) > 0) fallbackId = nextRes.rows[0].id;
+      }
+    }
+    const del = await p.query(`DELETE FROM fiscal_years WHERE id = $1`, [id]);
+    if ((del.rowCount || 0) === 0) { await p.query('ROLLBACK'); return res.status(404).json({ ok: false, error: t('fiscalYears.notFound', lang) }); }
+    if (wasOpen && fallbackId) {
+      // Exclusive open: close all, then open the fallback fiscal year
+      await p.query(`UPDATE fiscal_years SET is_closed = TRUE`);
+      await p.query(`UPDATE fiscal_years SET is_closed = FALSE WHERE id = $1`, [fallbackId]);
+    }
+    await p.query('COMMIT');
+    return res.json({ id, message: t('fiscalYears.deleted', lang), opened_id: fallbackId || undefined });
+  } catch {
+    try { await p.query('ROLLBACK'); } catch {}
     return res.status(500).json({ ok: false, error: t('error.generic', lang) });
   }
 });

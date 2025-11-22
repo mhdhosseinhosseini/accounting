@@ -15,51 +15,52 @@
     "edit": "ویرایش",
     "loading": "در حال بارگذاری...",
     "error": "خطا",
-    "success": "موفقیت",
+    "success": "موفق",
     "warning": "هشدار",
     "info": "اطلاعات",
     "search": "جستجو",
-    "noData": "داده‌ای وجود ندارد",
+    "apply": "اعمال",
+    "noData": "اطلاعاتی موجود نیست",
     "yes": "بله",
     "no": "خیر",
     "all": "همه",
-    "none": "هیچ‌کدام",
     "status": "وضعیت",
     "currency": "ریال",
-    "errors": { "required": "ورود کد الزامیست" },
+    "none": "هیچ",
     "showing": "نمایش",
     "to": "تا",
     "of": "از",
-    "totalRow": "نتایج",
+    "totalRow": "نتیجه",
     "actions": "عملیات"
   },
   "health": {
-    "title": "سلامت سرویس",
+    "title": "وضعیت سرویس",
     "message": "پیام سلامت"
   },
   "fetch": {
-    "error": "دریافت وضعیت سلامت ناموفق بود"
+    "error": "دریافت داده‌ها ناموفق بود"
   },
   "errors": {
-    "unknown": "خطای ناشناخته رخ داد"
+    "unknown": "خطای ناشناخته رخ داد",
+    "fiscalYearRequired": "لطفاً یک سال مالی انتخاب کنید"
   },
   "auth": {
     "title": "ورود",
-    "enter_mobile": "وارد کردن شماره موبایل",
+    "enter_mobile": "شماره موبایل را وارد کنید",
     "mobile_placeholder": "09xxxxxxxxx",
     "send_code": "ارسال کد",
     "sending": "در حال ارسال…",
     "code_sent": "کد به {mobile} ارسال شد",
-    "enter_code": "وارد کردن کد",
-    "verify": "تایید",
-    "verifying": "در حال تایید…",
+    "enter_code": "کد را وارد کنید",
+    "verify": "تأیید",
+    "verifying": "در حال تأیید…",
     "resend": "ارسال مجدد",
-    "resend_in": "ارسال مجدد در {s} ثانیه",
+    "resend_in": "ارسال مجدد تا {s}ثانیه",
     "change_number": "تغییر شماره",
     "invalid_mobile": "شماره موبایل نامعتبر است",
     "invalid_code": "کد نامعتبر است",
-    "request_failed": "خطا در ارسال درخواست",
-    "verify_failed": "خطا در تایید کد",
+    "request_failed": "درخواست ناموفق",
+    "verify_failed": "تأیید ناموفق",
     "username": "نام کاربری",
     "mobileNumber": "شماره موبایل"
   },
@@ -69,16 +70,17 @@
     "logout": "خروج",
     "dashboard": "داشبورد",
     "accounts": "حساب‌ها",
-    "journals": "روزنامه‌ها",
+    "journals": "روزنامه",
+    "documents": "اسناد",
     "invoices": "فاکتورها",
-    "parties": "اشخاص",
+    "parties": "طرف‌ها",
     "warehouses": "انبارها",
     "reports": "گزارش‌ها",
-    "codes": "حساب‌ها",
-    "details": "تفصیلی‌ها",
-    "detailLevels": "سطوح تفصیلی",
+    "codes": "کدها",
     "fiscalYears": "سال‌های مالی",
-    "quickLinks": "میانبرها"
+    "quickLinks": "میانبرها",
+    "details": "تفصیلی‌ها",
+    "detailLevels": "گروه تفصیلی"
   },
   "actions": {
     "reset": "بازنشانی",
@@ -86,23 +88,30 @@
     "change": "تغییر",
     "remove": "حذف",
     "create": "ایجاد",
+    "new": "جدید",
     "createUnder": "ایجاد زیرمجموعه",
-    "clear": "حذف",
     "save": "ذخیره",
     "delete": "حذف",
     "saving": "در حال ذخیره...",
     "back": "بازگشت",
     "apply": "اعمال",
-    "confirm": "تایید",
-    "confirmDelete": "از حذف اطمینان دارید؟",
+    "confirm": "تأیید",
+    "confirmDelete": "آیا از حذف مطمئن هستید؟",
     "cancel": "لغو",
     "edit": "ویرایش",
-    "ok": "تایید"
+    "ok": "باشه",
+    "print": "چاپ",
+    "actions": "عملیات",
+    "renumbering": "شماره‌گذاری مجدد",
+    "postFiltered": "ارسال پیش‌نویس‌های فیلتر شده",
+    "addToList": "افزودن به فهرست",
+    "removeFromList": "حذف از فهرست"
   },
   "labels": {
     "root": "ریشه",
     "child": "فرزند",
-    "none": "هیچ‌کدام"
+    "none": "هیچ",
+    "feastWallYear": "سال دیوار جشن"
   },
   "pages": {
     "reports": {
@@ -115,63 +124,74 @@
     "fiscalYears": {
       "title": "سال‌های مالی",
       "create": "ایجاد سال مالی",
-      "list": "فهرست سال‌های مالی"
-    },
-    "codes": {
-      "title": "مدیریت حساب‌ها",
-      "create": "افزودن کد",
-      "edit": "ویرایش کد",
-      "tree": "حساب‌ها",
-      "codeOrTitle": "جستجو کد و عنوان",
-      "groupCodeLength": "کد گروه باید ۲ رقمی باشد.",
-      "generalCodeLength": "کد عمومی باید ۴ رقمی باشد.",
-      "specificCodeLength": "کد اختصاصی باید ۶ رقمی باشد.",
-      "kind": {
-        "general": "کل",
-        "specific": "معین",
-        "group": "گروه"
-      },
-      "noParent": "بدون والد",
-      "conflict": "این کد قبلا ثبت شده است.",
-      "mustPickGroupParent": "برای نوع عمومی، والد باید گروه باشد.",
-      "mustPickGeneralParent": "برای نوع اختصاصی، والد باید عمومی باشد.",
-      "nature": {
-        "creditor": "بستانکار",
-        "debitor": "بدهکار"
-      },
-      "deleteConfirmTitle": "حذف کد",
-      "deleteConfirmMessage": "حذف {code} — {title}؟",
-      "deleteConfirmCascade": "این کد و همه زیرمجموعه‌های آن حذف شود؟",
-      "deletedCascade": "کد و همه زیرمجموعه‌های آن حذف شدند.",
-      "createUnder": "ایجاد آیتم کد جدید",
-      "cannotCreateUnderSpecific": "امکان ایجاد زیرمجموعه برای کد خاص وجود ندارد"
+      "list": "فهرست سال‌های مالی",
+      "deleteConfirm": "این سال مالی حذف شود؟",
+      "deletedSuccess": "سال مالی حذف شد",
+      "deleteFailed": "حذف سال مالی ناموفق بود",
+      "deleteNotSupported": "حذف هنوز پشتیبانی نمی‌شود.",
+      "openFailed": "باز کردن سال مالی ناموفق بود",
+      "openThis": "باز کردن این سال مالی",
+      "alreadyOpen": "قبلاً باز است",
+      "datesLockedHint": "در صورت وجود سند، امکان ویرایش تاریخ‌ها وجود ندارد"
     },
     "details": {
       "title": "مدیریت تفصیلی‌ها",
       "list": "فهرست تفصیلی‌ها",
       "create": "ایجاد تفصیلی",
       "edit": "ویرایش تفصیلی",
-      "addEdit": "افزودن",
+      "addEdit": "افزودن/ویرایش",
       "linkedLevels": "سطوح تفصیلی مرتبط",
-      "leafOnlyHint": "تنها سطوح برگ قابل ارتباط هستند.",
+      "leafOnlyHint": "فقط سطوح برگ قابل اتصال هستند.",
       "deleteConfirm": "این تفصیلی حذف شود؟"
     },
     "detailLevels": {
-      "treeTitle": "سطوح تفصیلی",
-      "createTitle": "ایجاد سطح تفصیلی",
-      "editTitle": "ویرایش سطح تفصیلی",
+      "treeTitle": "گروه تفصیلی",
+      "createTitle": "ایجاد گروه تفصیلی",
+      "editTitle": "ویرایش گروه تفصیلی",
       "searchPlaceholder": "جستجوی کد یا عنوان",
+      "selectedCodesList": "فهرست کدهای معین انتخاب‌شده",
+      "selectSpecificCode": "انتخاب کد معین",
       "actions": { "createRoot": "ایجاد ریشه" },
       "errors": {
         "rootRequiresSpecific": "سطح ریشه باید کد معین داشته باشد",
-        "nonRootCannotHaveSpecific": "سطح غیرریشه نمی‌تواند کد معین داشته باشد",
-        "codeExists": "کد سطح تفصیلی قبلاً ثبت شده است"
+        "nonRootCannotHaveSpecific": "سطح فرزند نمی‌تواند کد معین داشته باشد",
+        "codeExists": "کد سطح تفصیلی از قبل وجود دارد"
       }
+    },
+    "journals": {
+      "title": "روزنامه",
+      "create": "ایجاد روزنامه",
+      "list": "فهرست روزنامه‌ها",
+      "post": "ارسال",
+      "autoNewYork": {
+        "title": "ایجاد روزنامه خودکار نیویورک",
+        "create": "ایجاد خودکار نیویورک",
+        "success": "روزنامه خودکار نیویورک ایجاد شد",
+        "error": "ایجاد روزنامه خودکار ناموفق بود"
+      }
+    },
+    "documents": {
+      "title": "اسناد",
+      "filters": "فیلترها",
+      "list": "فهرست اسناد",
+      "searchPlaceholder": "جستجو در سربرگ و ردیف‌ها (مثلاً 20 یا 10-20)",
+      "searchRangeHint": "نکته: برای فیلتر محدوده شماره سند، 10-20 (یا ۱۰-۲۰) وارد کنید",
+      "deleteConfirm": "این سند پیش‌نویس حذف شود؟",
+      "new": "سند جدید"
+    },
+    "documentForm": {
+      "title": "فرم سند"
+    },
+    "codes": {
+      "codeOrTitle": "جستجوی کد یا عنوان"
     }
   },
   "fields": {
     "fromDate": "از تاریخ",
     "toDate": "تا تاریخ",
+    "dateFrom": "تاریخ از",
+    "dateTo": "تاریخ تا",
+    "fiscalYear": "سال مالی",
     "fiscalYearId": "شناسه سال مالی",
     "assets": "دارایی‌ها",
     "liabilities": "بدهی‌ها",
@@ -183,7 +203,9 @@
     "name": "نام",
     "debit": "بدهکار",
     "credit": "بستانکار",
-    "nature": "ماهیت",
+    "date": "تاریخ",
+    "id": "شناسه",
+    "description": "توضیحات",
     "startDate": "تاریخ شروع",
     "endDate": "تاریخ پایان",
     "status": "وضعیت",
@@ -191,10 +213,31 @@
     "open": "باز",
     "title": "عنوان",
     "kind": "نوع",
+    "type": "نوع",
     "parent": "والد",
     "codeId": "شناسه کد",
     "specificCode": "کد معین",
-    "isActive": "فعال"
+    "specificCodes": "کدهای معین",
+    "isActive": "فعال",
+    "amount": "مبلغ",
+    "debitCodeId": "شناسه کد بدهکار",
+    "creditCodeId": "شناسه کد بستانکار",
+    "detailId": "شناسه تفصیلی",
+    "provider": "ارائه‌دهنده",
+    "refNo": "شماره مرجع",
+    "documentNo": "شماره",
+    "documentCode": "کد سند",
+    "serialNo": "شماره سریال",
+    "codeFrom": "کد سند از",
+    "codeTo": "کد سند تا",
+    "totals": "مجموع‌ها",
+    "search": "جستجو",
+    "dailyCount": "شمارنده روز",
+    "detailCode": "کد تفصیلی",
+    "note": "یادداشت",
+    "difference": "اختلاف",
+    "row": "ردیف",
+    "lines": "ردیف‌ها"
   },
   "validation": {
     "noItems": "هیچ آیتمی برای ارسال وجود ندارد",
@@ -203,6 +246,9 @@
     "groupCodeLength": "کد گروه باید ۲ رقمی باشد.",
     "generalCodeLength": "کد کل باید ۴ رقمی باشد.",
     "specificCodeLength": "کد معین باید ۶ رقمی باشد.",
-    "conflict": "این کد قبلا ثبت شده است."
+    "conflict": "این کد قبلا ثبت شده است.",
+    "dateRequired": "لطفاً تاریخ را انتخاب کنید",
+    "balancedRequired": "برای ذخیره، جمع بدهکار و بستانکار باید برابر باشد",
+    "uniqueDocNo": "این شماره سند قبلاً ثبت شده است"
   }
 }

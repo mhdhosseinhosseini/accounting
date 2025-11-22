@@ -20,6 +20,21 @@ interface Props {
   allowNegative?: boolean;
   showValidation?: boolean;
   selectAllOnFocus?: boolean;
+  // Added for flexible layout in tables/forms
+  fullWidth?: boolean;
+  size?: 'small' | 'medium' | 'large';
+  /**
+   * onCtrlEnter
+   * Optional shortcut callback fired when user presses Ctrl+Enter.
+   */
+  onCtrlEnter?: () => void;
+  /**
+   * onQuickFill
+   * Returns a value to insert when Shift+Enter is pressed.
+   * If it returns null/undefined or resolves to 0, no change is applied.
+   * The component will set its value immediately and propagate via onChange.
+   */
+  onQuickFill?: () => number | string | null;
 }
 
 /**
@@ -30,6 +45,7 @@ interface Props {
  * - Formats with thousands separators while typing
  * - Displays localized digits (Farsi) on blur
  * - Preserves caret position across reformatting
+ * - New: supports size ('small'|'medium'|'large') and fullWidth for better table integration
  */
 const NumericInput: React.FC<Props> = ({
   value,
@@ -50,6 +66,10 @@ const NumericInput: React.FC<Props> = ({
   showStepper = false,
   stepperPosition = 'right',
   maxLength,
+  fullWidth = false,
+  size = 'small',
+  onCtrlEnter,
+  onQuickFill,
 }) => {
   const { t, i18n } = useTranslation();
   const isRTL = i18n.dir() === 'rtl';
@@ -153,6 +173,9 @@ const NumericInput: React.FC<Props> = ({
   // Padding for stepper overlay and side classes
   const padClass = showStepper ? (stepperPosition === 'left' ? 'pl-7' : 'pr-7') : '';
   const stepperSideClasses = 'rounded-md border border-gray-300 shadow-sm';
+  const widthClass = fullWidth ? 'w-full' : 'w-28';
+  const sizeClasses = size === 'large' ? 'py-3 h-11' : size === 'medium' ? 'py-2 h-10' : 'py-1 h-8';
+  const stepperHeightClass = size === 'large' ? 'h-11' : size === 'medium' ? 'h-10' : 'h-8';
 
   /**
    * clampNumber
@@ -253,8 +276,35 @@ const NumericInput: React.FC<Props> = ({
   /**
    * handleKeyDown
    * Allows only numeric-relevant keys, supports arrow step, and enforces decimal/negative rules.
+   * Also triggers quick fill when Shift+Enter is pressed, and preserves Ctrl+Enter.
    */
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Shift+Enter quick fill: set value immediately and propagate via onChange
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      if (!disabled && onQuickFill) {
+        try {
+          const val = onQuickFill();
+          // Do nothing when no value provided or value resolves to zero
+          if (val == null) { return; }
+          const asciiCandidate = typeof val === 'number'
+            ? formatNumToAscii(val)
+            : toEnglishNumeric(String(val).trim(), allowDecimal, decimalScale, allowNegative);
+          const numericCandidate = Number(asciiCandidate);
+          if (Number.isFinite(numericCandidate) && numericCandidate === 0) { return; }
+          setAsciiValue(asciiCandidate);
+          const formatted = formatForTyping(asciiCandidate);
+          setDisplayVal(formatted);
+          onChange(asciiCandidate);
+          requestAnimationFrame(() => {
+            const el = inputRef.current; if (!el) return; const len = el.value.length; el.setSelectionRange(len, len);
+          });
+        } catch {}
+      }
+      return;
+    }
+    // Ctrl+Enter shortcut callback (kept for convenience)
+    if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); if (!disabled && onCtrlEnter) { try { onCtrlEnter(); } catch {} } return; }
     if (e.key === 'ArrowUp') { e.preventDefault(); if (!disabled) increment(); return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); if (!disabled) decrement(); return; }
     const allowKeys = new Set(['Backspace','Delete','ArrowLeft','ArrowRight','Home','End','Tab']); if (allowKeys.has(e.key)) return;
@@ -289,7 +339,7 @@ const NumericInput: React.FC<Props> = ({
           type="text"
           dir={dirOverride || (isRTL ? 'rtl' : 'ltr')}
           lang={isFa ? 'fa' : 'en'}
-          className={`w-28 border rounded px-2 py-1 ${invalid ? 'border-red-500 focus:ring-red-300' : ''} ${padClass} ${className}`}
+          className={`${widthClass} border rounded px-2 ${invalid ? 'border-red-500 focus:ring-red-300' : ''} ${padClass} ${sizeClasses} ${className}`}
           value={displayVal}
           onFocus={handleFocus}
           onChange={handleChange}
@@ -301,7 +351,7 @@ const NumericInput: React.FC<Props> = ({
           aria-invalid={invalid || undefined}
         />
         {showStepper && (
-          <div className={`absolute ${stepperPosition === 'left' ? 'left-2' : 'right-2'} top-1/2 -translate-y-1/2 h-8 w-5 bg-gray-100 flex flex-col overflow-hidden ${stepperSideClasses} ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div className={`absolute ${stepperPosition === 'left' ? 'left-2' : 'right-2'} top-1/2 -translate-y-1/2 ${stepperHeightClass} w-5 bg-gray-100 flex flex-col overflow-hidden ${stepperSideClasses} ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
             <button type="button" className="h-4 flex items-center justify-center text-[10px] leading-none text-gray-700 hover:bg-gray-200" onClick={increment} disabled={disabled} aria-label={t('actions.increment','Increment')}>▲</button>
             <button type="button" className="h-4 flex items-center justify-center text-[10px] leading-none text-gray-700 hover:bg-gray-200 border-t" onClick={decrement} disabled={disabled} aria-label={t('actions.decrement','Decrement')}>▼</button>
           </div>

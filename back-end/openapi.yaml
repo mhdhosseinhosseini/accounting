@@ -728,6 +728,71 @@ paths:
                     type: string
         '404':
           description: Not found
+  /v1/journals/auto/new-york:
+    post:
+      summary: Create automatic New York journal
+      x-i18n:
+        summary:
+          en: Create automatic New York journal
+          fa: ایجاد سند خودکار نیویورک
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fiscal_year_id:
+                  type: string
+                date:
+                  type: string
+                  format: date
+                amount:
+                  type: number
+                  minimum: 0.01
+                debit_code_id:
+                  type: string
+                credit_code_id:
+                  type: string
+                detail_id:
+                  type: string
+                  nullable: true
+                cost_center_code:
+                  type: string
+                  nullable: true
+                description:
+                  type: string
+                  nullable: true
+              required: [fiscal_year_id, date, amount, debit_code_id, credit_code_id]
+      responses:
+        '201':
+          description: Created automatic journal
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [draft, posted]
+                  ref_no:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          description: Invalid input
+        '404':
+          description: Cost center not found
+        '409':
+          description: Duplicate reference number
+        '500':
+          description: Server error
+        '404':
+          description: Not found
   /v1/products:
     get:
       summary: List products

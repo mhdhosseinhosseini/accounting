@@ -19,6 +19,7 @@
     "warning": "Warning",
     "info": "Information",
     "search": "Search",
+    "apply": "Apply",
     "noData": "No data",
     "yes": "Yes",
     "no": "No",
@@ -37,10 +38,11 @@
     "message": "Health message"
   },
   "fetch": {
-    "error": "Failed to fetch health status"
+    "error": "Failed to fetch data"
   },
   "errors": {
-    "unknown": "Unknown error occurred"
+    "unknown": "Unknown error occurred",
+    "fiscalYearRequired": "Please select a fiscal year"
   },
   "auth": {
     "title": "Login",
@@ -69,6 +71,7 @@
     "dashboard": "Dashboard",
     "accounts": "Accounts",
     "journals": "Journals",
+    "documents": "Documents",
     "invoices": "Invoices",
     "parties": "Parties",
     "warehouses": "Warehouses",
@@ -85,6 +88,7 @@
     "change": "Change",
     "remove": "Remove",
     "create": "Create",
+    "new": "New",
     "createUnder": "Create Under",
     "save": "Save",
     "delete": "Delete",
@@ -95,12 +99,19 @@
     "confirmDelete": "Are you sure you want to delete?",
     "cancel": "Cancel",
     "edit": "Edit",
-    "ok": "OK"
+    "ok": "OK",
+    "print": "Print",
+    "actions": "Actions",
+    "renumbering": "Renumbering",
+    "postFiltered": "Post filtered drafts",
+    "addToList": "Add to list",
+    "removeFromList": "Remove from list"
   },
   "labels": {
     "root": "Root",
     "child": "Child",
-    "none": "None"
+    "none": "None",
+    "feastWallYear": "Feast Wall Year"
   },
   "pages": {
     "reports": {
@@ -113,7 +124,15 @@
     "fiscalYears": {
       "title": "Fiscal Years",
       "create": "Create Fiscal Year",
-      "list": "Fiscal Years List"
+      "list": "Fiscal Years List",
+      "deleteConfirm": "Delete this fiscal year?",
+      "deletedSuccess": "Fiscal year deleted",
+      "deleteFailed": "Failed to delete fiscal year",
+      "deleteNotSupported": "Delete is not supported yet.",
+      "openFailed": "Failed to open fiscal year",
+      "openThis": "Open this fiscal year",
+      "alreadyOpen": "Already open",
+      "datesLockedHint": "Dates cannot be edited when documents exist."
     },
     "details": {
       "title": "Details Manager",
@@ -130,17 +149,49 @@
       "createTitle": "Create Detail Level",
       "editTitle": "Edit Detail Level",
       "searchPlaceholder": "Search code or title",
+      "selectedCodesList": "Selected Specific Codes",
+      "selectSpecificCode": "Select Specific Code",
       "actions": { "createRoot": "Create Root" },
       "errors": {
         "rootRequiresSpecific": "Root detail must have a specific code",
         "nonRootCannotHaveSpecific": "Child detail cannot have a specific code",
         "codeExists": "Detail level code already exists"
       }
+    },
+    "journals": {
+      "title": "Journals",
+      "create": "Create Journal",
+      "list": "Journals List",
+      "post": "Post",
+      "autoNewYork": {
+        "title": "Create Automatic New York Journal",
+        "create": "Create Auto NY",
+        "success": "Automatic New York journal created",
+        "error": "Failed to create automatic journal"
+      }
+    },
+    "documents": {
+      "title": "Documents",
+      "filters": "Filters",
+      "list": "Documents List",
+      "searchPlaceholder": "Search header and lines (e.g., 20 or 10-20)",
+      "searchRangeHint": "Tip: enter 10-20 (or ۱۰-۲۰) to filter by document number range",
+      "deleteConfirm": "Delete this draft document?",
+      "new": "New Document"
+    },
+    "documentForm": {
+      "title": "Document Form"
+    },
+    "codes": {
+      "codeOrTitle": "Search code or title"
     }
   },
   "fields": {
     "fromDate": "From Date",
     "toDate": "To Date",
+    "dateFrom": "Date From",
+    "dateTo": "Date To",
+    "fiscalYear": "Fiscal Year",
     "fiscalYearId": "Fiscal Year ID",
     "assets": "Assets",
     "liabilities": "Liabilities",
@@ -152,6 +203,9 @@
     "name": "Name",
     "debit": "Debit",
     "credit": "Credit",
+    "date": "Date",
+    "id": "ID",
+    "description": "Description",
     "startDate": "Start Date",
     "endDate": "End Date",
     "status": "Status",
@@ -159,14 +213,37 @@
     "open": "Open",
     "title": "Title",
     "kind": "Kind",
+    "type": "Type",
     "parent": "Parent",
-    "nature": "Nature",
     "codeId": "Code ID",
     "specificCode": "Specific Code",
-    "isActive": "Active"
+    "specificCodes": "Specific Codes",
+    "isActive": "Active",
+    "amount": "Amount",
+    "debitCodeId": "Debit Code ID",
+    "creditCodeId": "Credit Code ID",
+    "detailId": "Detail ID",
+    "provider": "Provider",
+    "refNo": "Reference No.",
+    "documentNo": "Number",
+    "documentCode": "Document Code",
+    "serialNo": "Serial Number",
+    "codeFrom": "Document Code From",
+    "codeTo": "Document Code To",
+    "totals": "Totals",
+    "search": "Search",
+    "dailyCount": "Daily Count",
+    "detailCode": "Detail Code",
+    "note": "Notes",
+    "difference": "Difference",
+    "row": "Row",
+    "lines": "Lines"
   },
   "validation": {
     "noItems": "No items to submit",
-    "missingFields": "Please fill all fields"
+    "missingFields": "Please fill all fields",
+    "dateRequired": "Please choose a date",
+    "balancedRequired": "Debit and credit must be equal to save",
+    "uniqueDocNo": "This document number already exists"
   }
 }

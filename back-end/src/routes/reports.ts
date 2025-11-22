@@ -165,3 +165,144 @@ reportsRouter.get('/profit-loss', async (req: Request, res: Response) => {
     return res.status(500).json({ ok: false, error: t('error.generic', lang) });
   }
 });
+
+/**
+ * GET /journals-pivot-raw
+ * Returns raw journal items with computed row/column keys for client-side pivoting.
+ * Query params:
+ * - fiscal_year_id (required)
+ * - start_date, end_date (optional, YYYY-MM-DD)
+ * - journal_code_from, journal_code_to (optional)
+ * - account_code_from, account_code_to (optional)
+ * - row_dim, col_dim (optional: 'month'|'date'|'status'|'journal_code'|'account_code'|'detail_code')
+ * Notes:
+ * - Only posted journals by default; pass status=all to include all.
+ */
+reportsRouter.get('/journals-pivot-raw', async (req: Request, res: Response) => {
+  const lang: Lang = (req as any).lang || 'en';
+  const fiscal_year_id = String(req.query.fiscal_year_id || req.query.fy_id || '');
+  if (!fiscal_year_id) return res.status(400).json({ ok: false, error: t('error.invalidInput', lang) });
+
+  // Extract filters safely
+  const start_date = req.query.start_date ? String(req.query.start_date) : null;
+  const end_date = req.query.end_date ? String(req.query.end_date) : null;
+  const journal_code_from = req.query.journal_code_from ? Number(req.query.journal_code_from) : null;
+  const journal_code_to = req.query.journal_code_to ? Number(req.query.journal_code_to) : null;
+  const account_code_from = req.query.account_code_from ? Number(req.query.account_code_from) : null;
+  const account_code_to = req.query.account_code_to ? Number(req.query.account_code_to) : null;
+  const status = req.query.status ? String(req.query.status) : 'posted';
+
+  // Dimensions: whitelist to prevent SQL injection
+  const allowedDims = new Set(['month', 'date', 'status', 'journal_code', 'account_code', 'detail_code']);
+  const row_dim_raw = String(req.query.row_dim || 'month').toLowerCase();
+  const col_dim_raw = String(req.query.col_dim || 'status').toLowerCase();
+  const row_dim = allowedDims.has(row_dim_raw) ? row_dim_raw : 'month';
+  const col_dim = allowedDims.has(col_dim_raw) ? col_dim_raw : 'status';
+
+  // Helper to map dimension to SQL expression
+  /**
+   * getDimExpr
+   * Returns SQL fragment to compute a dimension key value.
+   */
+  function getDimExpr(dim: string): string {
+    switch (dim) {
+      case 'month':
+        return `to_char(j.date, 'YYYY-MM')`;
+      case 'date':
+        return `to_char(j.date, 'YYYY-MM-DD')`;
+      case 'status':
+        return `j.status`;
+      case 'journal_code':
+        return `COALESCE(j.code::text, '-')`;
+      case 'account_code':
+        return `COALESCE(a.code::text, '-')`;
+      case 'detail_code':
+        return `COALESCE(d.code::text, '-')`;
+      default:
+        return `to_char(j.date, 'YYYY-MM')`;
+    }
+  }
+
+  // Base SQL selecting raw items with row/col keys
+  let sql = `SELECT
+               ${getDimExpr(row_dim)} AS row_key,
+               ${getDimExpr(col_dim)} AS col_key,
+               ji.debit::numeric AS debit,
+               ji.credit::numeric AS credit,
+               j.id AS journal_id,
+               to_char(j.date, 'YYYY-MM-DD') AS date,
+               COALESCE(j.code, NULL) AS journal_code,
+               COALESCE(a.code, NULL) AS account_code,
+               COALESCE(d.code, NULL) AS detail_code
+             FROM journal_items ji
+             JOIN journals j ON j.id = ji.journal_id
+             JOIN accounts a ON a.id = ji.account_id
+             LEFT JOIN details d ON d.id = ji.detail_id
+             WHERE j.fiscal_year_id = $1`;
+  const params: any[] = [fiscal_year_id];
+
+  // Status filter: default posted only
+  if (status !== 'all') {
+    sql += ` AND j.status = 'posted'`;
+  }
+
+  // Date range filter
+  if (start_date && end_date) {
+    sql += ` AND j.date BETWEEN $2 AND $3`;
+    params.push(start_date, end_date);
+  } else if (start_date) {
+    sql += ` AND j.date >= $2`;
+    params.push(start_date);
+  } else if (end_date) {
+    sql += ` AND j.date <= $2`;
+    params.push(end_date);
+  }
+
+  // Journal code range filter
+  if (journal_code_from != null && journal_code_to != null) {
+    sql += ` AND j.code BETWEEN $${params.length + 1} AND $${params.length + 2}`;
+    params.push(journal_code_from, journal_code_to);
+  } else if (journal_code_from != null) {
+    sql += ` AND j.code >= $${params.length + 1}`;
+    params.push(journal_code_from);
+  } else if (journal_code_to != null) {
+    sql += ` AND j.code <= $${params.length + 1}`;
+    params.push(journal_code_to);
+  }
+
+  // Account code range filter
+  if (account_code_from != null && account_code_to != null) {
+    sql += ` AND a.code BETWEEN $${params.length + 1} AND $${params.length + 2}`;
+    params.push(account_code_from, account_code_to);
+  } else if (account_code_from != null) {
+    sql += ` AND a.code >= $${params.length + 1}`;
+    params.push(account_code_from);
+  } else if (account_code_to != null) {
+    sql += ` AND a.code <= $${params.length + 1}`;
+    params.push(account_code_to);
+  }
+
+  // Order for stable output
+  sql += ` ORDER BY j.date ASC, j.ref_no ASC, ji.id ASC`;
+
+  try {
+    const p = getPool();
+    const r = await p.query(sql, params);
+    const items = r.rows || [];
+
+    // Compute simple totals server-side for quick summaries
+    const totals = items.reduce(
+      (acc: any, it: any) => {
+        acc.debit += Number(it.debit || 0);
+        acc.credit += Number(it.credit || 0);
+        acc.count += 1;
+        return acc;
+      },
+      { debit: 0, credit: 0, count: 0 }
+    );
+
+    return res.json({ items, totals, message: t('reports.journalsPivotRaw.fetched', lang) });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: t('error.generic', lang) });
+  }
+});

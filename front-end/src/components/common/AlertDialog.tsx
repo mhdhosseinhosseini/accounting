@@ -7,6 +7,10 @@ export interface AlertDialogProps {
   message: string;
   onClose: () => void;
   type?: 'error' | 'warning' | 'info' | 'success';
+  /** When true, shows a dim backdrop; when false, backdrop is transparent. */
+  dimBackground?: boolean;
+  /** Optional override for backdrop class names (Tailwind). */
+  backdropClassName?: string;
 }
 
 /**
@@ -17,6 +21,7 @@ export interface AlertDialogProps {
  * - RTL/LTR support based on current i18n language
  * - Contextual icon and color scheme based on the alert type
  * - Single OK action to dismiss the dialog
+ * - Configurable backdrop via `dimBackground` (default true) or `backdropClassName`
  */
 const AlertDialog: React.FC<AlertDialogProps> = ({
   open,
@@ -24,6 +29,8 @@ const AlertDialog: React.FC<AlertDialogProps> = ({
   message,
   onClose,
   type = 'info',
+  dimBackground = true,
+  backdropClassName,
 }) => {
   const { t, i18n } = useTranslation();
   const dir = i18n.language === 'fa' ? 'rtl' : 'ltr';
@@ -84,7 +91,10 @@ const AlertDialog: React.FC<AlertDialogProps> = ({
     // Modal root at a high z-index to sit above other overlays
     <div className="fixed inset-0 z-[1600] overflow-y-auto" dir={dir}>
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black bg-opacity-50 transition-opacity" onClick={onClose}></div>
+      <div
+        className={backdropClassName ?? (dimBackground ? 'fixed inset-0 bg-black bg-opacity-50 transition-opacity' : 'fixed inset-0 bg-transparent')}
+        onClick={onClose}
+      ></div>
 
       {/* Dialog container */}
       <div className="flex min-h-full items-center justify-center p-4">

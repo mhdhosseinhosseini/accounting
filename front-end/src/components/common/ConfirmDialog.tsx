@@ -11,6 +11,10 @@ interface ConfirmDialogProps {
   onCancel: () => void;
   type?: 'danger' | 'warning' | 'info' | 'success';
   children?: React.ReactNode;
+  /** When true, shows a dim backdrop; when false, backdrop is transparent. */
+  dimBackground?: boolean;
+  /** Optional override for backdrop class names (Tailwind). */
+  backdropClassName?: string;
 }
 
 const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
@@ -22,7 +26,9 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   onConfirm,
   onCancel,
   type = 'info',
-  children
+  children,
+  dimBackground = true,
+  backdropClassName
 }) => {
   const { t, i18n } = useTranslation();
   const dir = i18n.language === 'fa' ? 'rtl' : 'ltr';
@@ -71,9 +77,9 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 
   return (
     <div className="fixed inset-0 z-[1700] flex items-center justify-center p-4" dir={dir}>
-      {/* Backdrop */}
+      {/* Backdrop: configurable to avoid darkening the background when undesired */}
       <div
-        className="absolute inset-0 bg-black bg-opacity-50 transition-opacity"
+        className={backdropClassName ?? (dimBackground ? 'absolute inset-0 bg-black bg-opacity-50 transition-opacity' : 'absolute inset-0 bg-transparent')}
         onClick={onCancel}
       ></div>
 

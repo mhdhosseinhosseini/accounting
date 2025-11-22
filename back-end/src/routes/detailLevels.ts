@@ -7,7 +7,7 @@ import { getPool } from '../db/pg';
 /**
  * Router: Detail Levels
  * Implements hierarchical detail levels with self-referencing parent.
- * Root nodes must link to a 'specific' code via `specific_code_id`.
+ * Supports optional association to multiple 'specific' codes via `specific_code_ids`.
  * Postgres-only implementation under /api/v1/detail-levels.
  */
 export const detailLevelsRouter = Router();
@@ -23,7 +23,7 @@ const createSchema = z.object({
   code: z.string().min(1),
   title: z.string().min(1),
   parent_id: z.string().min(1).nullable().optional(),
-  specific_code_id: z.string().min(1).nullable().optional(),
+  specific_code_ids: z.array(z.string().min(1)).optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -35,7 +35,7 @@ const updateSchema = z.object({
   code: z.string().min(1).optional(),
   title: z.string().min(1).optional(),
   parent_id: z.string().min(1).nullable().optional(),
-  specific_code_id: z.string().min(1).nullable().optional(),
+  specific_code_ids: z.array(z.string().min(1)).optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -78,16 +78,29 @@ async function ensureSpecificKind(codeId: string | null): Promise<boolean> {
 
 /**
  * GET / - List all detail levels (flat).
- * Returns `id, code, title, parent_id, specific_code_id, is_active`.
+ * Returns `id, code, title, parent_id, specific_code_ids, is_active`.
  */
 detailLevelsRouter.get('/', async (req: Request, res: Response) => {
   const lang: Lang = (req as any).lang || 'en';
   try {
     const p = getPool();
     const r = await p.query(
-      `SELECT id, code, title, parent_id, specific_code_id, is_active FROM detail_levels ORDER BY code`
+      `SELECT id, code, title, parent_id, is_active FROM detail_levels ORDER BY code`
     );
-    return res.json({ items: r.rows, message: t('detailLevels.list', lang) });
+    const c = await p.query(
+      `SELECT detail_level_id, array_agg(code_id) AS specific_code_ids
+       FROM detail_level_specific_codes
+       GROUP BY detail_level_id`
+    );
+    const codesMap = new Map<string, string[]>();
+    for (const row of c.rows) {
+      codesMap.set(String(row.detail_level_id), (row.specific_code_ids || []) as string[]);
+    }
+    const items = r.rows.map((row: any) => ({
+      ...row,
+      specific_code_ids: codesMap.get(String(row.id)) || [],
+    }));
+    return res.json({ items, message: t('detailLevels.list', lang) });
   } catch (e) {
     console.error('detailLevels GET / failed:', e);
     return res.status(500).json({ ok: false, error: t('error.generic', lang) });
@@ -103,9 +116,21 @@ detailLevelsRouter.get('/tree', async (req: Request, res: Response) => {
   try {
     const p = getPool();
     const r = await p.query(
-      `SELECT id, code, title, parent_id, specific_code_id, is_active FROM detail_levels ORDER BY code`
+      `SELECT id, code, title, parent_id, is_active FROM detail_levels ORDER BY code`
     );
-    const rows: any[] = r.rows;
+    const c = await p.query(
+      `SELECT detail_level_id, array_agg(code_id) AS specific_code_ids
+       FROM detail_level_specific_codes
+       GROUP BY detail_level_id`
+    );
+    const codesMap = new Map<string, string[]>();
+    for (const row of c.rows) {
+      codesMap.set(String(row.detail_level_id), (row.specific_code_ids || []) as string[]);
+    }
+    const rows: any[] = r.rows.map((row: any) => ({
+      ...row,
+      specific_code_ids: codesMap.get(String(row.id)) || [],
+    }));
     const byId = new Map<string, any>();
     const roots: any[] = [];
     rows.forEach((r) => {
@@ -138,10 +163,23 @@ detailLevelsRouter.get('/children', async (req: Request, res: Response) => {
   try {
     const p = getPool();
     const sql = parentId
-      ? `SELECT id, code, title, parent_id, specific_code_id, is_active FROM detail_levels WHERE parent_id = $1 ORDER BY code`
-      : `SELECT id, code, title, parent_id, specific_code_id, is_active FROM detail_levels WHERE parent_id IS NULL ORDER BY code`;
+      ? `SELECT id, code, title, parent_id, is_active FROM detail_levels WHERE parent_id = $1 ORDER BY code`
+      : `SELECT id, code, title, parent_id, is_active FROM detail_levels WHERE parent_id IS NULL ORDER BY code`;
     const r = parentId ? await p.query(sql, [parentId]) : await p.query(sql);
-    return res.json({ items: r.rows, message: t('detailLevels.list', lang) });
+    const c = await p.query(
+      `SELECT detail_level_id, array_agg(code_id) AS specific_code_ids
+       FROM detail_level_specific_codes
+       GROUP BY detail_level_id`
+    );
+    const codesMap = new Map<string, string[]>();
+    for (const row of c.rows) {
+      codesMap.set(String(row.detail_level_id), (row.specific_code_ids || []) as string[]);
+    }
+    const items = r.rows.map((row: any) => ({
+      ...row,
+      specific_code_ids: codesMap.get(String(row.id)) || [],
+    }));
+    return res.json({ items, message: t('detailLevels.list', lang) });
   } catch (e) {
     console.error('detailLevels GET /children failed:', e);
     return res.status(500).json({ ok: false, error: t('error.generic', lang) });
@@ -157,11 +195,14 @@ detailLevelsRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const p = getPool();
     const r = await p.query(
-      `SELECT id, code, title, parent_id, specific_code_id, is_active FROM detail_levels WHERE id = $1`,
+      `SELECT id, code, title, parent_id, is_active FROM detail_levels WHERE id = $1`,
       [id]
     );
     if (r.rowCount === 0) return res.status(404).json({ ok: false, error: t('detailLevels.notFound', lang) });
-    return res.json({ item: r.rows[0], message: t('detailLevels.fetchOne', lang) });
+    const c = await p.query(`SELECT code_id FROM detail_level_specific_codes WHERE detail_level_id = $1`, [id]);
+    const specific_code_ids = c.rows.map((row: any) => String(row.code_id));
+    const item = { ...r.rows[0], specific_code_ids };
+    return res.json({ item, message: t('detailLevels.fetchOne', lang) });
   } catch (e) {
     console.error('detailLevels GET /:id failed:', e);
     return res.status(500).json({ ok: false, error: t('error.generic', lang) });
@@ -170,28 +211,14 @@ detailLevelsRouter.get('/:id', async (req: Request, res: Response) => {
 
 /**
  * POST / - Create a detail level.
- * Enforces linking rules: root must have `specific_code_id`; non-root must not.
+ * Accepts optional `specific_code_ids` array and persists to join table.
  * Validates uniqueness of `code` and specific-kind requirement.
  */
 detailLevelsRouter.post('/', async (req: Request, res: Response) => {
   const lang: Lang = (req as any).lang || 'en';
   const parse = createSchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ ok: false, error: t('error.invalidInput', lang), details: parse.error.issues });
-  const { code, title, parent_id, specific_code_id, is_active } = parse.data;
-
-  // Linking rules
-  if (!parent_id && !specific_code_id) {
-    return res.status(400).json({ ok: false, error: t('detailLevels.specificRequired', lang) });
-  }
-  if (parent_id && specific_code_id) {
-    return res.status(400).json({ ok: false, error: t('detailLevels.rootOnlyLink', lang) });
-  }
-  if (!parent_id && specific_code_id) {
-    const okSpecific = await ensureSpecificKind(specific_code_id);
-    if (!okSpecific) {
-      return res.status(400).json({ ok: false, error: t('detailLevels.specificRequired', lang) });
-    }
-  }
+  const { code, title, parent_id, specific_code_ids, is_active } = parse.data;
 
   const id = require('crypto').randomUUID();
   try {
@@ -199,9 +226,23 @@ detailLevelsRouter.post('/', async (req: Request, res: Response) => {
     const dup = await p.query(`SELECT id FROM detail_levels WHERE code = $1`, [code]);
     if ((dup.rowCount || 0) > 0) return res.status(409).json({ ok: false, error: t('detailLevels.duplicateCode', lang) });
     await p.query(
-      `INSERT INTO detail_levels (id, code, title, parent_id, specific_code_id, is_active) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, code, title, parent_id || null, specific_code_id || null, is_active ?? true]
+      `INSERT INTO detail_levels (id, code, title, parent_id, is_active) VALUES ($1, $2, $3, $4, $5)`,
+      [id, code, title, parent_id || null, is_active ?? true]
     );
+
+    if (specific_code_ids && specific_code_ids.length > 0) {
+      for (const cid of specific_code_ids) {
+        const okSpecific = await ensureSpecificKind(cid);
+        if (!okSpecific) {
+          return res.status(400).json({ ok: false, error: t('detailLevels.specificRequired', lang) });
+        }
+        await p.query(
+          `INSERT INTO detail_level_specific_codes (detail_level_id, code_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [id, cid]
+        );
+      }
+    }
+
     return res.status(201).json({ id, message: t('detailLevels.created', lang) });
   } catch (e) {
     console.error('detailLevels POST / failed:', e);
@@ -218,12 +259,12 @@ detailLevelsRouter.patch('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   const parse = updateSchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ ok: false, error: t('error.invalidInput', lang), details: parse.error.issues });
-  const { code, title, parent_id, specific_code_id, is_active } = parse.data;
+  const { code, title, parent_id, specific_code_ids, is_active } = parse.data;
 
   try {
     const p = getPool();
     const existing = await p.query(
-      `SELECT id, code, title, parent_id, specific_code_id, is_active FROM detail_levels WHERE id = $1`,
+      `SELECT id, code, title, parent_id, is_active FROM detail_levels WHERE id = $1`,
       [id]
     );
     if (existing.rowCount === 0) return res.status(404).json({ ok: false, error: t('detailLevels.notFound', lang) });
@@ -241,28 +282,29 @@ detailLevelsRouter.patch('/:id', async (req: Request, res: Response) => {
     const nextParent = parent_id !== undefined ? (parent_id || null) : row.parent_id;
     const nextCode = code !== undefined ? code : row.code;
     const nextTitle = title !== undefined ? title : row.title;
-    const nextSpecific = specific_code_id !== undefined ? (specific_code_id || null) : row.specific_code_id;
-
-    // Linking rules on next state
-    if (!nextParent && !nextSpecific) {
-      return res.status(400).json({ ok: false, error: t('detailLevels.specificRequired', lang) });
-    }
-    if (nextParent && nextSpecific) {
-      return res.status(400).json({ ok: false, error: t('detailLevels.rootOnlyLink', lang) });
-    }
-    if (!nextParent && nextSpecific) {
-      const okSpecific = await ensureSpecificKind(nextSpecific);
-      if (!okSpecific) {
-        return res.status(400).json({ ok: false, error: t('detailLevels.specificRequired', lang) });
-      }
-    }
-
     const nextActive = is_active !== undefined ? is_active : row.is_active;
 
     await p.query(
-      `UPDATE detail_levels SET code = $1, title = $2, parent_id = $3, specific_code_id = $4, is_active = $5, updated_at = NOW() WHERE id = $6`,
-      [nextCode, nextTitle, nextParent, nextSpecific, nextActive, id]
+      `UPDATE detail_levels SET code = $1, title = $2, parent_id = $3, is_active = $4, updated_at = NOW() WHERE id = $5`,
+      [nextCode, nextTitle, nextParent, nextActive, id]
     );
+
+    if (specific_code_ids !== undefined) {
+      await p.query(`DELETE FROM detail_level_specific_codes WHERE detail_level_id = $1`, [id]);
+      if (specific_code_ids && specific_code_ids.length > 0) {
+        for (const cid of specific_code_ids) {
+          const okSpecific = await ensureSpecificKind(cid);
+          if (!okSpecific) {
+            return res.status(400).json({ ok: false, error: t('detailLevels.specificRequired', lang) });
+          }
+          await p.query(
+            `INSERT INTO detail_level_specific_codes (detail_level_id, code_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            [id, cid]
+          );
+        }
+      }
+    }
+
     return res.json({ id, message: t('detailLevels.updated', lang) });
   } catch (e) {
     console.error('detailLevels PATCH /:id failed:', e);
@@ -302,10 +344,25 @@ detailLevelsRouter.get('/children', async (req: Request, res: Response) => {
   try {
     const p = getPool();
     const sql = parentId
-      ? `SELECT id, code, title, parent_id, specific_code_id, is_active FROM detail_levels WHERE parent_id = $1 ORDER BY code`
-      : `SELECT id, code, title, parent_id, specific_code_id, is_active FROM detail_levels WHERE parent_id IS NULL ORDER BY code`;
+      ? `SELECT id, code, title, parent_id, is_active FROM detail_levels WHERE parent_id = $1 ORDER BY code`
+      : `SELECT id, code, title, parent_id, is_active FROM detail_levels WHERE parent_id IS NULL ORDER BY code`;
     const r = parentId ? await p.query(sql, [parentId]) : await p.query(sql);
-    return res.json({ items: r.rows, message: t('detailLevels.list', lang) });
+
+    const c = await p.query(
+      `SELECT detail_level_id, array_agg(code_id) AS specific_code_ids
+       FROM detail_level_specific_codes
+       GROUP BY detail_level_id`
+    );
+    const codesMap = new Map<string, string[]>();
+    for (const row of c.rows) {
+      codesMap.set(String(row.detail_level_id), (row.specific_code_ids || []) as string[]);
+    }
+    const items = r.rows.map((row: any) => ({
+      ...row,
+      specific_code_ids: codesMap.get(String(row.id)) || [],
+    }));
+
+    return res.json({ items, message: t('detailLevels.list', lang) });
   } catch {
     return res.status(500).json({ ok: false, error: t('error.generic', lang) });
   }
