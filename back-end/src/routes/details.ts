@@ -62,8 +62,30 @@ detailsRouter.get('/', async (req: Request, res: Response) => {
   const lang: Lang = (req as any).lang || 'en';
   try {
     const p = getPool();
-    const r = await p.query(`SELECT id, code, title, is_active FROM details ORDER BY code`);
+    const r = await p.query(`SELECT id, code, title, is_active, kind FROM details ORDER BY code`);
     return res.json({ items: r.rows, message: t('details.list', lang) });
+  } catch {
+    return res.status(500).json({ ok: false, error: t('error.generic', lang) });
+  }
+});
+
+/**
+ * GET /suggest-next - Suggest the next available 4-digit code (Postgres-only).
+ * Finds the smallest unused code in the 0001..9999 range.
+ */
+detailsRouter.get('/suggest-next', async (req: Request, res: Response) => {
+  const lang: Lang = (req as any).lang || 'en';
+  try {
+    const p = getPool();
+    const r = await p.query(`SELECT code FROM details`);
+    const existingCodes: string[] = r.rows.map((x) => x.code);
+    const set = new Set(existingCodes);
+    let suggestion = '0001';
+    for (let i = 1; i <= 9999; i++) {
+      const candidate = String(i).padStart(4, '0');
+      if (!set.has(candidate)) { suggestion = candidate; break; }
+    }
+    return res.json({ code: suggestion, message: t('details.suggested', lang) });
   } catch {
     return res.status(500).json({ ok: false, error: t('error.generic', lang) });
   }
@@ -77,7 +99,7 @@ detailsRouter.get('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
     const p = getPool();
-    const r = await p.query(`SELECT id, code, title, is_active FROM details WHERE id = $1`, [id]);
+    const r = await p.query(`SELECT id, code, title, is_active, kind FROM details WHERE id = $1`, [id]);
     if (r.rowCount === 0) return res.status(404).json({ ok: false, error: t('details.notFound', lang) });
     return res.json({ item: r.rows[0], message: t('details.fetchOne', lang) });
   } catch {
@@ -126,8 +148,8 @@ detailsRouter.post('/', async (req: Request, res: Response) => {
     const dup = await p.query(`SELECT id FROM details WHERE code = $1`, [code]);
     if ((dup.rowCount || 0) > 0) return res.status(409).json({ ok: false, error: t('details.duplicateCode', lang) });
 
-    // Create detail row
-    await p.query(`INSERT INTO details (id, code, title, is_active) VALUES ($1, $2, $3, $4)`, [id, code, title, is_active ?? true]);
+    // Create detail row (UI-defined => kind = TRUE)
+    await p.query(`INSERT INTO details (id, code, title, is_active, kind) VALUES ($1, $2, $3, $4, TRUE)`, [id, code, title, is_active ?? true]);
 
     // Normalize links from either field
     const normalized = (detail_levels && detail_levels.length > 0)
@@ -176,8 +198,12 @@ detailsRouter.patch('/:id', async (req: Request, res: Response) => {
   }
   try {
     const p = getPool();
-    const existing = await p.query(`SELECT id FROM details WHERE id = $1`, [id]);
+    const existing = await p.query(`SELECT id, kind FROM details WHERE id = $1`, [id]);
     if (existing.rowCount === 0) return res.status(404).json({ ok: false, error: t('details.notFound', lang) });
+    const isSystemManaged = existing.rows[0]?.kind === false;
+    if (isSystemManaged) {
+      return res.status(403).json({ ok: false, error: t('details.systemManagedCannotEdit', lang) });
+    }
     if (code) {
       const dup = await p.query(`SELECT id FROM details WHERE code = $1 AND id <> $2`, [code, id]);
       if ((dup.rowCount || 0) > 0) return res.status(409).json({ ok: false, error: t('details.duplicateCode', lang) });
@@ -226,6 +252,9 @@ detailsRouter.delete('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
     const p = getPool();
+    const existing = await p.query(`SELECT kind FROM details WHERE id = $1`, [id]);
+    if (existing.rowCount === 0) return res.status(404).json({ ok: false, error: t('details.notFound', lang) });
+    if (existing.rows[0]?.kind === false) return res.status(403).json({ ok: false, error: t('details.systemManagedCannotDelete', lang) });
     const link = await p.query(`SELECT 1 FROM details_detail_levels WHERE detail_id = $1 LIMIT 1`, [id]);
     if ((link.rowCount || 0) > 0) return res.status(409).json({ ok: false, error: t('details.linkedExists', lang) });
     const r = await p.query(`DELETE FROM details WHERE id = $1`, [id]);

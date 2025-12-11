@@ -62,6 +62,22 @@ interface SearchableSelectProps<T extends SelectableOption> {
    * Improves UX for code inputs: no need to arrow-select when only one result.
    */
   autoSelectSingleOnEnter?: boolean;
+  /** Controls the text displayed in the input when a value is selected */
+  inputDisplayMode?: 'code' | 'label';
+  /** Text to show when there are no options (translatable) */
+  noOptionsText?: string;
+  /** Optional ref to the underlying input for programmatic focus */
+  inputRef?: React.Ref<HTMLInputElement>;
+  /**
+   * Optional callback invoked immediately after a selection is committed
+   * (via Enter auto-select or normal option selection). Useful for focusing
+   * a follow-up control like a Save button.
+   */
+  onCommitted?: (value: T | null) => void;
+  /** Allow creating a new option from free text */
+  creatable?: boolean;
+  /** Callback when user chooses to create a new option from input */
+  onCreateOption?: (inputText: string) => void;
 }
 
 /**
@@ -71,6 +87,7 @@ interface SearchableSelectProps<T extends SelectableOption> {
  * - Allows customizing option label and equality behavior.
  * - Displays only the code in the input field while showing code + title in dropdown.
  * - Keyboard UX: if filtering yields exactly one option, pressing Enter selects it.
+ * - Creatable UX: when enabled, shows a "Create 'input'" option that selects the new value.
  */
 const SearchableSelect = <T extends SelectableOption>({
   options,
@@ -94,8 +111,14 @@ const SearchableSelect = <T extends SelectableOption>({
   renderOption,
   filterOptions,
   autoSelectSingleOnEnter = true,
+  inputDisplayMode = 'code',
+  noOptionsText,
+  inputRef,
+  onCommitted,
+  creatable = false,
+  onCreateOption,
 }: SearchableSelectProps<T>) => {
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
   const isRTL = i18n.language === 'fa';
 
   /**
@@ -107,12 +130,15 @@ const SearchableSelect = <T extends SelectableOption>({
   };
 
   /**
-   * getOptionCode
-   * Returns a string "code" representation used for input display.
-   * Prefers the `code` field, then `id`, then `name`.
+   * getOptionDisplayText
+   * Returns text shown inside the input. When `inputDisplayMode` is 'label',
+   * uses the option's label; otherwise shows the code/id (default).
    */
-  const getOptionCode = (option: T | null): string => {
+  const getOptionDisplayText = (option: T | null): string => {
     if (!option) return '';
+    if (inputDisplayMode === 'label') {
+      return (getOptionLabel || defaultGetOptionLabel)(option);
+    }
     const o: any = option as any;
     if (o.code != null) return String(o.code);
     if (option.id != null) return String(option.id);
@@ -172,13 +198,47 @@ const SearchableSelect = <T extends SelectableOption>({
   };
 
   /**
+   * isNewOption
+   * Helper to detect a synthetic "create new" option.
+   */
+  const isNewOption = (o: any): boolean => Boolean(o && o.__isNew__ === true);
+
+  /**
+   * mergedFilterOptions
+   * Applies the provided or default filter, then injects a synthetic
+   * "Create 'input'" option when `creatable` is enabled and the input
+   * does not match an existing option by name.
+   */
+  const mergedFilterOptions = (opts: T[], state: FilterOptionsState<T>): T[] => {
+    const fn = filterOptions || defaultFilterOptions;
+    const filtered = fn(opts, state);
+    if (!creatable) return filtered;
+    const rawInput = String(state.inputValue || '').trim();
+    if (!rawInput) return filtered;
+    const normalized = normalizeDigits(rawInput).toLowerCase();
+    const exists = opts.some((o) => normalizeDigits(String((o as any).name || '')).toLowerCase() === normalized);
+    if (!exists) {
+      const sentinel: any = { id: `__new__:${rawInput}`, name: rawInput, __isNew__: true };
+      filtered.push(sentinel);
+    }
+    return filtered;
+  };
+
+  /**
    * Internal input value state used to display only the code when a value is selected.
    * When the user types, we follow their text; when a selection changes, we derive code.
    */
-  const [inputValueInternal, setInputValueInternal] = useState<string>(getOptionCode(value));
+  const [inputValueInternal, setInputValueInternal] = useState<string>(getOptionDisplayText(value));
+
+  /**
+   * openInternal
+   * Controls the Autocomplete popup visibility so we can close it programmatically
+   * after Enter-based auto selection or any selection event.
+   */
+  const [openInternal, setOpenInternal] = useState<boolean>(false);
 
   useEffect(() => {
-    setInputValueInternal(getOptionCode(value));
+    setInputValueInternal(getOptionDisplayText(value));
   }, [value]);
 
   const computedInputValue = inputValue ?? inputValueInternal;
@@ -188,15 +248,28 @@ const SearchableSelect = <T extends SelectableOption>({
     if (!autoSelectSingleOnEnter || disabled) return;
     if (evt.key !== 'Enter') return;
 
-    const filterFn = filterOptions || defaultFilterOptions;
-    const filtered = filterFn(options, { inputValue: computedInputValue } as FilterOptionsState<T>);
+    const filtered = mergedFilterOptions(options, { inputValue: computedInputValue } as FilterOptionsState<T>);
 
     if (filtered.length === 1) {
       evt.preventDefault();
       evt.stopPropagation();
-      const selected = filtered[0];
-      onChange(selected);
-      setInputValueInternal(getOptionCode(selected));
+      const selected = filtered[0] as any;
+      if (creatable && isNewOption(selected)) {
+        const text = String(selected.name || computedInputValue).trim();
+        const created: any = { id: text, name: text };
+        onChange(created);
+        setInputValueInternal(getOptionDisplayText(created));
+        setOpenInternal(false);
+        onCommitted?.(created);
+        onCreateOption?.(text);
+      } else {
+        onChange(selected);
+        setInputValueInternal(getOptionDisplayText(selected));
+        // Close dropdown after auto-select
+        setOpenInternal(false);
+        // Notify parent that selection is fully committed
+        onCommitted?.(selected);
+      }
     }
   };
 
@@ -205,16 +278,31 @@ const SearchableSelect = <T extends SelectableOption>({
       options={options}
       value={value}
       onChange={(_, newValue) => {
+        const nv: any = newValue as any;
+        if (creatable && nv && isNewOption(nv)) {
+          const text = String(nv.name || computedInputValue).trim();
+          const created: any = { id: text, name: text };
+          onChange(created);
+          setInputValueInternal(getOptionDisplayText(created));
+          setOpenInternal(false);
+          onCommitted?.(created);
+          onCreateOption?.(text);
+          return;
+        }
         onChange(newValue);
-        // Ensure input always reflects only the code of the selected value
-        setInputValueInternal(getOptionCode(newValue));
+        // Ensure input reflects selected display mode (code or label)
+        setInputValueInternal(getOptionDisplayText(newValue));
+        // Close dropdown on any selection
+        setOpenInternal(false);
+        // Notify parent that selection is fully committed
+        onCommitted?.(newValue);
       }}
       onInputChange={(event, newInputValue, reason) => {
         // Prevent MUI from overwriting the input with name (title) on blur/reset
         if (reason === 'reset' || reason === 'blur' || reason === 'clear') {
-          const codeOnly = getOptionCode(value);
-          setInputValueInternal(codeOnly);
-          onInputChange?.(codeOnly);
+          const displayText = getOptionDisplayText(value);
+          setInputValueInternal(displayText);
+          onInputChange?.(displayText);
         } else {
           setInputValueInternal(newInputValue);
           onInputChange?.(newInputValue);
@@ -229,14 +317,31 @@ const SearchableSelect = <T extends SelectableOption>({
       size={size}
       fullWidth={fullWidth}
       openOnFocus={openOnFocus}
-      filterOptions={filterOptions || defaultFilterOptions}
+      filterOptions={mergedFilterOptions}
+      noOptionsText={noOptionsText ?? t('common.noData', 'No data')}
+      // Controlled open state to allow programmatic closing
+      open={openInternal}
+      onOpen={() => setOpenInternal(true)}
+      onClose={() => setOpenInternal(false)}
+      blurOnSelect
       renderOption={
         renderOption || ((props, option) => {
-          const codeText = getOptionCode(option);
+          const oo: any = option as any;
+          if (creatable && isNewOption(oo)) {
+            return (
+              <li {...props} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontFamily: 'monospace', color: '#16a34a' }}>+</span>
+                <span style={{ color: '#374151' }}>{t('actions.create', 'Create')} "{String(oo.name)}"</span>
+              </li>
+            );
+          }
+          // When no explicit `code` exists, do NOT fall back to showing `id`.
+          // This keeps dropdowns clean (no internal IDs like GUIDs).
+          const codeText = oo.code != null ? String(oo.code) : '';
           const nameText = (getOptionLabel || defaultGetOptionLabel)(option);
           return (
             <li {...props} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontFamily: 'monospace' }}>{codeText}</span>
+              {codeText ? <span style={{ fontFamily: 'monospace' }}>{codeText}</span> : null}
               <span style={{ color: '#6b7280' }}>{nameText}</span>
             </li>
           );
@@ -252,6 +357,7 @@ const SearchableSelect = <T extends SelectableOption>({
           helperText={error || helperText}
           dir={isRTL ? 'rtl' : 'ltr'}
           size={size}
+          inputRef={inputRef}
           onKeyDown={(evt) => {
             handleInputKeyDown(evt as React.KeyboardEvent<HTMLInputElement>);
             // Preserve MUI Autocomplete's internal key handling
@@ -292,6 +398,12 @@ const SearchableSelect = <T extends SelectableOption>({
             direction: isRTL ? 'rtl' : 'ltr',
             // Make dropdown wider to improve readability of code and title
             minWidth: 480,
+          },
+        },
+        // Ensure dropdown appears above modals/dialogs like ConfirmDialog
+        popper: {
+          style: {
+            zIndex: 3000,
           },
         },
       }}

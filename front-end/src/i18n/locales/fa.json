@@ -31,7 +31,21 @@
     "to": "تا",
     "of": "از",
     "totalRow": "نتیجه",
-    "actions": "عملیات"
+    "actions": "عملیات",
+    "cash": "نقد",
+    "cheque": "چک",
+    "check": "چک",
+    "card": "کارت",
+    "transfer": "حواله",
+    "select": "انتخاب",
+    "noItems": "موردی وجود ندارد",
+    "errors": {
+      "required": "پر کردن این فیلد الزامی است",
+      "min": "مقدار باید ≥ {{min}} باشد",
+      "max": "مقدار باید ≤ {{max}} باشد",
+      "noDecimal": "اعشار مجاز نیست",
+      "decimalPlaces": "حداکثر {{count}} رقم اعشار"
+    }
   },
   "health": {
     "title": "وضعیت سرویس",
@@ -80,14 +94,27 @@
     "fiscalYears": "سال‌های مالی",
     "quickLinks": "میانبرها",
     "details": "تفصیلی‌ها",
-    "detailLevels": "گروه تفصیلی"
+    "detailLevels": "گروه تفصیلی",
+    "treasury": "خزانه‌داری",
+    "treasuryCashboxes": "صندوق‌ها",
+    "treasuryBankReceipts": "دریافت‌های بانکی",
+    "treasuryPayments": "پرداختی‌ها",
+    "treasuryBanks": "بانک‌ها",
+    "treasuryBankAccounts": "حساب‌های بانکی",
+    "treasuryManageBanks": "مدیریت بانک‌ها",
+    "treasuryChecks": "مدیریت چک",
+    "treasuryReceipts": "دریافتی‌ها",
+    "treasurySettings": "تنظیمات"
   },
   "actions": {
     "reset": "بازنشانی",
-    "close": "بستن",
+    "yes": "بله",
+    "no": "خیر",
     "change": "تغییر",
     "remove": "حذف",
     "create": "ایجاد",
+    "post": "ارسال",
+    "close": "بستن",
     "new": "جدید",
     "createUnder": "ایجاد زیرمجموعه",
     "save": "ذخیره",
@@ -105,13 +132,27 @@
     "renumbering": "شماره‌گذاری مجدد",
     "postFiltered": "ارسال پیش‌نویس‌های فیلتر شده",
     "addToList": "افزودن به فهرست",
-    "removeFromList": "حذف از فهرست"
+    "removeFromList": "حذف از فهرست",
+    "deposit": "واریز",
+    "clear": "وصول",
+    "issueCheck": "صدور چک",
+    "return": "برگشت"
   },
   "labels": {
     "root": "ریشه",
     "child": "فرزند",
     "none": "هیچ",
     "feastWallYear": "سال دیوار جشن"
+  },
+  "fields": {
+    "type": "نوع",
+    "provider": "ارائه‌دهنده",
+    "code": "کد",
+    "name": "نام",
+    "bankName": "نام بانک",
+    "title": "عنوان",
+    "isActive": "فعال",
+    "value": "مقدار"
   },
   "pages": {
     "reports": {
@@ -142,7 +183,14 @@
       "addEdit": "افزودن/ویرایش",
       "linkedLevels": "سطوح تفصیلی مرتبط",
       "leafOnlyHint": "فقط سطوح برگ قابل اتصال هستند.",
-      "deleteConfirm": "این تفصیلی حذف شود؟"
+      "deleteConfirm": "این تفصیلی حذف شود؟",
+      "kind": "نوع",
+      "kind.user": "کاربر",
+      "kind.system": "سیستم",
+      "systemManagedTooltip": {
+        "edit": "تفصیلی‌های تحت مدیریت سیستم قابل ویرایش نیستند",
+        "delete": "تفصیلی‌های تحت مدیریت سیستم قابل حذف نیستند"
+      }
     },
     "detailLevels": {
       "treeTitle": "گروه تفصیلی",
@@ -170,6 +218,17 @@
         "error": "ایجاد روزنامه خودکار ناموفق بود"
       }
     },
+    "checks": {
+      "title": "چک‌ها",
+      "statuses": {
+        "created": "ایجاد شده",
+        "issued": "صادر شده",
+        "incashbox": "در صندوق",
+        "deposited": "خواباندن",
+        "cleared": "وصول شده",
+        "returned": "برگشت شده"
+      }
+    },
     "documents": {
       "title": "اسناد",
       "filters": "فیلترها",
@@ -180,12 +239,253 @@
       "new": "سند جدید"
     },
     "documentForm": {
-      "title": "فرم سند"
+      "title": "فرم سند",
+      "confirmUnbalancedSave": "این سند تراز نیست و به‌صورت پیش‌نویس ذخیره می‌شود. ادامه می‌دهید؟",
+      "confirmNatureMismatchDraft": "برخی کدها با ماهیت بدهکار/بستانکار ناسازگارند. ذخیره به‌صورت پیش‌نویس؟",
+      "detailsDisabled": "تفصیلی برای کد انتخاب‌شده غیرفعال است"
+    },
+    "receipts": {
+      "title": "دریافتی‌ها",
+      "list": "فهرست دریافتی‌ها",
+      "createTitle": "ثبت دریافت",
+      "editTitle": "ویرایش دریافتی",
+      "printTitle": "دریافتی",
+      "confirmDelete": "این دریافت حذف شود؟",
+      "deleted": "با موفقیت حذف شد",
+      "searchPlaceholder": "جستجوی دریافت‌ها",
+      "unsavedChangesConfirm": "تغییرات ذخیره‌نشده حذف شود؟",
+      "unsavedChangesTitle": "توجه",
+      "documentDeleted": "سند با موفقیت حذف شد",
+      "fields": {
+        "date": "تاریخ",
+        "description": "شرح",
+        "payer": "دریافت از",
+        "fiscalPeriod": "دوره مالی",
+        "status": "وضعیت",
+        "specialCode": "کد معین",
+        "noSpecialCode": "کد معین موجود نیست",
+        "cashbox": "صندوق",
+        "number": "شماره"
+      },
+      "payer": {
+        "noOptions": "طرفی یافت نشد",
+        "noPartiesHelp": "هنوز طرفی ثبت نشده است. ",
+        "createPartyCta": "ایجاد طرف",
+        "noDetailsHelp": "هنوز تفصیلی ثبت نشده است. ",
+        "createDetailCta": "ایجاد تفصیلی",
+        "thenSelectHint": " و سپس اینجا انتخاب کنید."
+      },
+      "items": {
+        "title": "اقلام",
+        "instrumentType": "نوع",
+        "details": "جزئیات",
+        "amount": "مبلغ",
+        "cashbox": "صندوق",
+        "bankAccount": "حساب بانکی",
+        "cardReader": "دستگاه کارت‌خوان",
+        "cardRef": "کد پیگیری کارت",
+        "transferRef": "شماره پیگیری انتقال",
+        "check": "چک",
+        "destinationType": "مقصد",
+        "destinationId": "مقصد"
+      },
+      "status": {
+        "draft": "پیش‌نویس",
+        "posted": "ارسال شده"
+      },
+      "total": "جمع",
+      "totalAmount": "جمع کل‌ :",
+      "leaveConfirm": "تغییرات ذخیره‌نشده حذف شود؟",
+      "validation": {
+        "form": {
+          "cashboxRequired": "انتخاب صندوق برای آیتم‌های نقد یا چک الزامی است"
+        }
+      }
+    },
+    "payments": {
+      "title": "پرداختی‌ها",
+      "list": "فهرست پرداختی‌ها",
+      "createTitle": "ثبت پرداخت",
+      "editTitle": "ویرایش پرداخت",
+      "searchPlaceholder": "جستجوی پرداخت‌ها",
+      "unsavedChangesConfirm": "تغییرات ذخیره‌نشده حذف شود؟",
+      "unsavedChangesTitle": "توجه",
+      "fields": {
+        "date": "تاریخ",
+        "description": "شرح",
+        "payer": "پرداخت به",
+        "fiscalPeriod": "دوره مالی",
+        "status": "وضعیت",
+        "specialCode": "کد معین",
+        "noSpecialCode": "کد معین موجود نیست",
+        "number": "شماره"
+      },
+      "payer": {
+        "noOptions": "طرفی یافت نشد",
+        "noDetailsHelp": "هنوز تفصیلی ثبت نشده است. ",
+        "createDetailCta": "ایجاد تفصیلی",
+        "thenSelectHint": " و سپس اینجا انتخاب کنید."
+      },
+      "items": {
+        "title": "اقلام",
+        "add": "افزودن ردیف",
+        "instrument": {
+          "cash": "نقد",
+          "checkin": "خرج چک",
+          "transfer": "حواله",
+          "check": "چک"
+        },
+        "amount": "مبلغ",
+        "cashbox": "صندوق",
+        "bankAccount": "حساب بانکی",
+        "cardRef": "کد پیگیری کارت",
+        "transferRef": "شماره پیگیری انتقال",
+        "check": "چک",
+        "destinationType": "مقصد",
+        "destinationId": "مقصد"
+      },
+      "status": {
+        "draft": "پیش‌نویس",
+        "posted": "ارسال شده"
+      },
+      "total": "جمع",
+      "totalAmount": "جمع کل‌ :",
+      "leaveConfirm": "تغییرات ذخیره‌نشده حذف شود؟"
     },
     "codes": {
-      "codeOrTitle": "جستجوی کد یا عنوان"
-    }
-  },
+      "codeOrTitle": "جستجوی کد یا عنوان",
+      "title":"مدیریت کدینک",
+      "tree":"کدینک",
+      "create":"ایجاد کدینک",
+      "edit":"ویرایش کدینک",
+      "nature": {
+        "credit":"بستانکار",
+        "debit":"بدهکار",        
+        "creditor":"بستانکار",
+        "debitor":"بدهکار"
+      },
+      "kind": {
+        "group":"گروه",
+        "general":"کل",
+        "specific":"معین"
+      },
+      "codeLength": {
+        "group": "کد گروه باید {{digits}} رقمی باشد.",
+        "general": "کد کل باید {{digits}} رقمی باشد.",
+        "specific": "کد معین باید {{digits}} رقمی باشد."
+      },
+      "canHaveDetails":{
+        "enable":"تفصیل دارد",
+        "disable":"تفصیل ندارد"
+      }
+    },
+    "settings": {
+      "errors": {
+        "codeExists": "کد تنظیم از قبل وجود دارد"
+      },
+      "type": {
+        "special": "کد معین",
+        "digits": "فقط اعداد",
+        "string": "متن"
+      },
+      "selectSpecialCode": "انتخاب کد معین"
+    },
+    "treasury": {
+      "title": "خزانه‌داری",
+      "tabs": {
+        "receipts": "دریافتی‌ها",
+        "payments": "پرداختی‌ها",
+        "registers": "دفاتر",
+        "cashboxes": "صندوق‌ها",
+        "banks": "بانک‌ها",
+        "bankAccounts": "حساب‌های بانکی",
+        "checks": "چک‌ها"
+      },
+      "createReceipt": "ثبت دریافت",
+      "createPayment": "ثبت پرداخت",
+      "listEmpty": "رکوردی موجود نیست"
+    },
+    "cashboxes": {
+      "title": "مدیریت صندوق‌ها",
+      "list": "فهرست صندوق‌ها",
+      "create": "ایجاد صندوق",
+      "edit": "ویرایش صندوق",
+      "deleteConfirm": "این صندوق حذف شود؟",
+      "codeAutoGeneratedHint": "کد به‌صورت خودکار بر اساس آخرین صندوق تعیین می‌شود و در جدول جزئیات یکتا است"
+    },
+    "banks": {
+      "title": "بانک‌ها",
+      "create": "ایجاد بانک",
+      "list": "فهرست بانک‌ها",
+      "edit": "ویرایش بانک",
+      "deleteConfirm": "این بانک حذف شود؟",
+      "deleted": "با موفقیت حذف شد",
+      "errors": {
+        "referencedByAccounts": "امکان حذف نیست: توسط حساب‌های بانکی ارجاع شده است"
+      }
+    },
+    "bankAccounts": {
+      "title": "حساب‌های بانکی",
+      "list": "فهرست حساب‌های بانکی",
+      "create": "ایجاد حساب بانکی",
+      "edit": "ویرایش حساب بانکی",
+      "deleteConfirm": "این حساب بانکی حذف شود؟",
+      "deleteCheckbookConfirm": "این دفترچه چک حذف شود؟",
+      "deleteCardReaderConfirm": "این دستگاه کارتخوان حذف شود؟",
+      "created": "با موفقیت ایجاد شد",
+      "updated": "با موفقیت به‌روزرسانی شد",
+      "checkbooks": "دفترچه‌های چک",
+      "cardReaders": "دستگاه‌های کارتخوان",
+      "manageCheckbooks": "مدیریت دفترچه‌های چک",
+      "manageCardReaders": "مدیریت کارتخوان‌ها",
+      "exhausted": "تمام‌شده",
+      "lost": "مفقود",
+      "damaged": "خراب",
+      "deleted": "با موفقیت حذف شد",
+      "errors": {
+        "checkbookHasIssuedChecks": "امکان حذف نیست: دفترچه چک دارای چک‌های صادر شده است",
+        "cardReaderReferencedByPayments": "امکان حذف نیست: کارتخوان در پرداخت‌ها ارجاع شده است",
+        "referencedByCheckbooks": "امکان حذف نیست: توسط دفترچه‌های چک ارجاع شده است"
+      }
+    },
+    "manageBanks": {
+      "title": "مدیریت بانک‌ها"
+    },
+    "banks": {
+      "list": "لیست بانک‌ها",
+      "create": "ایجاد بانک",
+      "deleteConfirm": "حذف این بانک؟",
+      "deleted": "با موفقیت حذف شد",
+      "errors": {
+        "referencedByAccounts": "امکان حذف نیست: توسط حساب‌های بانکی ارجاع شده است"
+      }
+    },
+    "treasury": {
+      "tabs": {
+        "banks": "بانک‌ها",
+        "bankAccounts": "حساب‌های بانکی"
+      }
+    },
+    "checks": {
+       "title": "مدیریت چک",
+       "issue": "صدور چک",
+       "outgoing": "چک‌های صادره",
+       "incoming": "چک‌های دریافتی",
+       "issueOutgoing": "صدور چک صادره",
+       "issueIncoming": "ایجاد چک دریافتی",
+       "outgoingRecent": "چک‌های صادره اخیر",
+       "incomingRecent": "چک‌های دریافتی اخیر",
+       "confirmDeleteOutgoing":"آیا میخواهید چک را حذف کنید؟",
+       "incomingPlaceholder": "صفحه چک‌های دریافتی در حال ساخت است.",
+       "statuses": {
+         "created": "ایجاد شده",
+         "issued": "صادر شده",
+         "deposited": "خواباندن",
+         "cleared": "وصول شده",
+         "returned": "برگشتی"
+       }
+     }
+    },
   "fields": {
     "fromDate": "از تاریخ",
     "toDate": "تا تاریخ",
@@ -199,6 +499,7 @@
     "revenue": "درآمد",
     "expense": "هزینه",
     "profit": "سود",
+    "value":"مقدار",
     "code": "کد",
     "name": "نام",
     "debit": "بدهکار",
@@ -213,6 +514,7 @@
     "open": "باز",
     "title": "عنوان",
     "kind": "نوع",
+    "nature": "ماهیت",
     "type": "نوع",
     "parent": "والد",
     "codeId": "شناسه کد",
@@ -220,6 +522,11 @@
     "specificCodes": "کدهای معین",
     "isActive": "فعال",
     "amount": "مبلغ",
+    "startingAmount": "مبلغ اولیه",
+    "startingDate": "تاریخ شروع",
+    "branchName":"نام شعبه",
+    "branchNumber":"شماره شعبه",
+    "city":"شهر",
     "debitCodeId": "شناسه کد بدهکار",
     "creditCodeId": "شناسه کد بستانکار",
     "detailId": "شناسه تفصیلی",
@@ -237,11 +544,56 @@
     "note": "یادداشت",
     "difference": "اختلاف",
     "row": "ردیف",
-    "lines": "ردیف‌ها"
+    "lines": "ردیف‌ها",
+    "cashboxId": "شناسه صندوق",
+    "handledBy": "مسئول صندوق",
+    "method": "روش",
+    "chequeNumber": "شماره چک",
+    "bankName": "نام بانک",
+    "issuer": "صادرکننده",
+    "beneficiary": "ذینفع",
+    "issueDate": "تاریخ صدور",
+    "dueDate": "تاریخ سررسید",
+    "accountNumber": "شماره حساب",
+    "kindOfAccount": "نوع حساب",
+    "cardNumber": "شماره کارت",
+    "iban": "شماره شبا",
+    "series": "سری",
+    "startNumber": "شماره شروع",
+    "endNumber": "شماره پایان",
+    "nextNumber": "شماره بعدی",
+    "issueDate": "تاریخ صدور",
+    "receivedDate": "تاریخ دریافت",
+    "pspProvider": "ارائه‌دهنده PSP",
+    "terminalId": "شناسه ترمینال",
+    "merchantId": "شناسه پذیرنده",
+    "deviceSerial": "سریال دستگاه",
+    "brand": "برند",
+    "model": "مدل",
+    "installDate": "تاریخ نصب",
+    "lastSettlementDate": "آخرین تسویه",
+    "pageCount": "تعداد برگه‌ها",
+    "bankAccount": "حساب بانکی",
+    "checkbook": "دفترچه چک",
+    "checkDate": "تاریخ چک",
+    "checkSerial": "شماره سریال",
+    "lastIssuedNumber": "آخرین شماره صادره",
+    "nextSuggestion": "پیشنهاد بعدی",
+    "recipientDetail": "دریافت‌کننده (تفصیلی)",
+    "range": "بازه",
+    "sayadi": "کد صیادی",
+    "codes": {
+      "canHaveDetails": {
+        "enable": "فعال‌سازی تفصیلی",
+        "disable": "غیرفعال‌سازی تفصیلی",
+        "updateFailed": "به‌روزرسانی وضعیت تفصیلی ناموفق بود"
+      }
+    }
   },
   "validation": {
     "noItems": "هیچ آیتمی برای ارسال وجود ندارد",
     "missingFields": "لطفاً همه فیلدها را پر کنید",
+    "requiredField": "لطفاً این فیلد را پر کنید",
     "noParent": "والد ندارد",
     "groupCodeLength": "کد گروه باید ۲ رقمی باشد.",
     "generalCodeLength": "کد کل باید ۴ رقمی باشد.",
@@ -249,6 +601,9 @@
     "conflict": "این کد قبلا ثبت شده است.",
     "dateRequired": "لطفاً تاریخ را انتخاب کنید",
     "balancedRequired": "برای ذخیره، جمع بدهکار و بستانکار باید برابر باشد",
-    "uniqueDocNo": "این شماره سند قبلاً ثبت شده است"
+    "uniqueDocNo": "این شماره سند قبلاً ثبت شده است",
+    "positiveAmount": "مبلغ باید مثبت باشد",
+    "cashboxRequired": "لطفاً صندوق را انتخاب کنید",
+    "bankRequired": "لطفاً بانک را انتخاب کنید"
   }
 }

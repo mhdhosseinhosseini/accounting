@@ -4,7 +4,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   /**
    * Button variant - determines the styling
    */
-  variant?: 'primary' | 'secondary' | 'outline' | 'text';
+  variant?: 'primary' | 'secondary' | 'outline' | 'text' | 'info';
   /**
    * Button size
    */
@@ -49,8 +49,9 @@ export const Button: React.FC<ButtonProps> = ({
   };
 
   /**
-   * Return Tailwind classes for the given variant.
-   * Uses CSS variables for colors to avoid inline styles.
+   * getVariantClassNames
+   * Returns Tailwind classes for the given variant.
+   * Uses CSS variables for primary/secondary, and semantic colors for info.
    */
   function getVariantClassNames(v: NonNullable<ButtonProps['variant']>): string {
     switch (v) {
@@ -58,6 +59,9 @@ export const Button: React.FC<ButtonProps> = ({
         return 'bg-[var(--gb-primary-main)] hover:bg-[var(--gb-primary-dark)] text-white focus:ring-[var(--gb-primary-main)]';
       case 'secondary':
         return 'bg-[var(--gb-secondary-main)] hover:bg-[var(--gb-secondary-dark)] text-white focus:ring-[var(--gb-secondary-main)]';
+      case 'info':
+        // Info: use blue semantic color to match ConfirmDialog type="info"
+        return 'bg-blue-600 hover:bg-blue-700 text-white focus:ring-blue-600';
       case 'outline':
         return 'bg-transparent text-[var(--gb-primary-main)] hover:bg-[var(--gb-primary-light)] hover:text-white border border-[var(--gb-primary-main)] focus:ring-[var(--gb-primary-main)]';
       case 'text':

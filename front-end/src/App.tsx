@@ -12,9 +12,13 @@ import { LoginPage } from './pages/LoginPage';
 
 import JournalsPage from './pages/JournalsPage';
 import InvoicesPage from './pages/InvoicesPage';
-import PartiesPage from './pages/PartiesPage';
 import WarehousesPage from './pages/WarehousesPage';
-// removed: import ReportsPage from './pages/ReportsPage';
+import CashboxesPage from './pages/CashboxesPage';
+import CashboxFormPage from './pages/CashboxFormPage';
+// Consolidation: Banks routed to unified Manage Banks page
+import BankFormPage from './pages/BankFormPage';
+import TreasuryPaymentsPage from './pages/TreasuryPaymentsPage';
+import ReceiptsPage from './pages/ReceiptsPage';
 import DashboardPage from './pages/DashboardPage';
 import FiscalYearsPage from './pages/FiscalYearsPage';
 import CodesPage from './pages/CodesPage';
@@ -22,11 +26,20 @@ import DetailsPage from './pages/DetailsPage';
 import DetailLevelsPage from './pages/DetailLevelsPage';
 import DocumentsPage from './pages/DocumentsPage';
 import DocumentFormPage from './pages/DocumentFormPage';
+import BankAccountsPage from './pages/BankAccountsPage';
+import BankAccountFormPage from './pages/BankAccountFormPage';
+import BankAccountCheckbooksPage from './pages/BankAccountCheckbooksPage';
+import BankAccountCardReadersPage from './pages/BankAccountCardReadersPage';
+import ChecksPage from './pages/ChecksPage';
+import ReceiptFormPage from './pages/ReceiptFormPage';
+import PaymentFormPage from './pages/PaymentFormPage';
+import TreasurySettingsPage from './pages/TreasurySettingsPage';
 
 function Protected({ children }: { children: React.ReactElement }) {
   const { isAuthenticated } = useAuth();
   return isAuthenticated ? children : <Navigate to="/login" replace />;
 }
+
 
 export default function App() {
   const lang = getInitialLang();
@@ -51,13 +64,34 @@ export default function App() {
       <Route path="/detail-levels" element={<Protected><DetailLevelsPage /></Protected>} />
       <Route path="/journals" element={<Protected><JournalsPage /></Protected>} />
       <Route path="/invoices" element={<Protected><InvoicesPage /></Protected>} />
-      <Route path="/parties" element={<Protected><PartiesPage /></Protected>} />
+      {/* Removed Parties page and route; use Details instead for payer management */}
+      {/* <Route path="/parties" element={<Protected><PartiesPage /></Protected>} /> */}
       <Route path="/warehouses" element={<Protected><WarehousesPage /></Protected>} />
+      <Route path="/treasury/cashboxes" element={<Protected><CashboxesPage /></Protected>} />
+      <Route path="/treasury/cashboxes/new" element={<Protected><CashboxFormPage /></Protected>} />
+      <Route path="/treasury/cashboxes/edit" element={<Protected><CashboxFormPage /></Protected>} />
+      {/* Route Banks to the consolidated Manage Banks page (BankAccountsPage with tabs) */}
+      <Route path="/treasury/banks" element={<Protected><BankAccountsPage /></Protected>} />
+      <Route path="/treasury/banks/new" element={<Protected><BankFormPage /></Protected>} />
+      <Route path="/treasury/banks/edit" element={<Protected><BankFormPage /></Protected>} />
+      <Route path="/treasury/bank-accounts" element={<Protected><BankAccountsPage /></Protected>} />
+      <Route path="/treasury/bank-accounts/new" element={<Protected><BankAccountFormPage /></Protected>} />
+      <Route path="/treasury/bank-accounts/edit" element={<Protected><BankAccountFormPage /></Protected>} />
+      <Route path="/treasury/bank-accounts/:id/checkbooks" element={<Protected><BankAccountCheckbooksPage /></Protected>} />
+      <Route path="/treasury/bank-accounts/:id/card-readers" element={<Protected><BankAccountCardReadersPage /></Protected>} />
+      <Route path="/treasury/checks" element={<Protected><ChecksPage /></Protected>} />
+      <Route path="/treasury/receipts" element={<Protected><ReceiptsPage /></Protected>} />
+      <Route path="/treasury/receipts/new" element={<Protected><ReceiptFormPage /></Protected>} />
+      <Route path="/treasury/receipts/:id" element={<Protected><ReceiptFormPage /></Protected>} />
+      <Route path="/treasury/payments" element={<Protected><TreasuryPaymentsPage /></Protected>} />
+      <Route path="/treasury/payments/new" element={<Protected><PaymentFormPage /></Protected>} />
+      <Route path="/treasury/payments/:id" element={<Protected><PaymentFormPage /></Protected>} />
       {/* Removed /reports route while rebuilding reports from scratch */}
       {/* <Route path="/reports" element={<Protected><ReportsPage /></Protected>} /> */}
       <Route path="/fiscal-years" element={<Protected><FiscalYearsPage /></Protected>} />
       <Route path="/documents" element={<Protected><DocumentsPage /></Protected>} />
       <Route path="/documents/new" element={<Protected><DocumentFormPage /></Protected>} />
+      <Route path="/treasury/settings" element={<Protected><TreasurySettingsPage /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -15,7 +15,7 @@ reportsRouter.use(requireAuth);
 
 /**
  * GET /trial-balance
- * Compute per-account debit/credit totals for a given fiscal year (posted journals only).
+ * Compute per-account debit/credit totals for a given fiscal year (permanent journals only).
  * Query: fiscal_year_id (required)
  */
 reportsRouter.get('/trial-balance', async (req: Request, res: Response) => {
@@ -31,7 +31,7 @@ reportsRouter.get('/trial-balance', async (req: Request, res: Response) => {
        FROM journal_items ji
        JOIN journals j ON j.id = ji.journal_id
        JOIN accounts a ON a.id = ji.account_id
-       WHERE j.status = 'posted' AND j.fiscal_year_id = $1
+       WHERE j.status = 'permanent' AND j.fiscal_year_id = $1
        GROUP BY a.id, a.code, a.name, a.type
        ORDER BY a.code`,
       [fiscal_year_id]
@@ -68,7 +68,7 @@ reportsRouter.get('/ledger', async (req: Request, res: Response) => {
     let sql = `SELECT j.id as journal_id, j.date, j.ref_no, ji.id as item_id, ji.debit, ji.credit, ji.description
                FROM journal_items ji
                JOIN journals j ON j.id = ji.journal_id
-               WHERE j.status = 'posted' AND j.fiscal_year_id = $1 AND ji.account_id = $2`;
+               WHERE j.status = 'permanent' AND j.fiscal_year_id = $1 AND ji.account_id = $2`;
     const params: any[] = [fiscal_year_id, account_id];
     if (start_date && end_date) {
       sql += ` AND j.date BETWEEN $3 AND $4`;
@@ -97,7 +97,7 @@ reportsRouter.get('/balance-sheet', async (req: Request, res: Response) => {
                      FROM journal_items ji
                      JOIN journals j ON j.id = ji.journal_id
                      JOIN accounts a ON a.id = ji.account_id
-                     WHERE j.status = 'posted' AND j.fiscal_year_id = $1
+                     WHERE j.status = 'permanent' AND j.fiscal_year_id = $1
                      GROUP BY a.type`;
     const p = getPool();
     const r = await p.query(baseSql, [fiscal_year_id]);
@@ -145,7 +145,7 @@ reportsRouter.get('/profit-loss', async (req: Request, res: Response) => {
                      FROM journal_items ji
                      JOIN journals j ON j.id = ji.journal_id
                      JOIN accounts a ON a.id = ji.account_id
-                     WHERE j.status = 'posted' AND j.fiscal_year_id = $1
+                     WHERE j.status = 'permanent' AND j.fiscal_year_id = $1
                      GROUP BY a.type`;
     const p = getPool();
     const r = await p.query(baseSql, [fiscal_year_id]);
@@ -176,7 +176,7 @@ reportsRouter.get('/profit-loss', async (req: Request, res: Response) => {
  * - account_code_from, account_code_to (optional)
  * - row_dim, col_dim (optional: 'month'|'date'|'status'|'journal_code'|'account_code'|'detail_code')
  * Notes:
- * - Only posted journals by default; pass status=all to include all.
+ * - Only permanent journals by default; pass status=all to include all.
  */
 reportsRouter.get('/journals-pivot-raw', async (req: Request, res: Response) => {
   const lang: Lang = (req as any).lang || 'en';
@@ -190,7 +190,7 @@ reportsRouter.get('/journals-pivot-raw', async (req: Request, res: Response) => 
   const journal_code_to = req.query.journal_code_to ? Number(req.query.journal_code_to) : null;
   const account_code_from = req.query.account_code_from ? Number(req.query.account_code_from) : null;
   const account_code_to = req.query.account_code_to ? Number(req.query.account_code_to) : null;
-  const status = req.query.status ? String(req.query.status) : 'posted';
+  const status = req.query.status ? String(req.query.status) : 'permanent';
 
   // Dimensions: whitelist to prevent SQL injection
   const allowedDims = new Set(['month', 'date', 'status', 'journal_code', 'account_code', 'detail_code']);
@@ -241,9 +241,9 @@ reportsRouter.get('/journals-pivot-raw', async (req: Request, res: Response) => 
              WHERE j.fiscal_year_id = $1`;
   const params: any[] = [fiscal_year_id];
 
-  // Status filter: default posted only
+  // Status filter: default permanent only
   if (status !== 'all') {
-    sql += ` AND j.status = 'posted'`;
+    sql += ` AND j.status = 'permanent'`;
   }
 
   // Date range filter

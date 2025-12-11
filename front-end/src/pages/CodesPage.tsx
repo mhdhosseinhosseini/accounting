@@ -11,13 +11,15 @@ import { useTranslation } from 'react-i18next';
 import config from '../config';
 import NumericInput from '../components/common/NumericInput';
 import CropSquareIcon from '@mui/icons-material/CropSquare';
-import { IconButton } from '@mui/material';
+import { IconButton, Tooltip } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-
+import ToggleOnIcon from '@mui/icons-material/ToggleOn';
+import ToggleOffIcon from '@mui/icons-material/ToggleOff';
+import { getCurrentLang } from '../i18n';
 import AlertDialog from '../components/common/AlertDialog';
 import { FormControl, InputLabel, Select, MenuItem, TextField, FormHelperText } from '@mui/material';
 
@@ -30,6 +32,7 @@ interface CodeItem {
   parent_id?: string | null;
   is_active?: boolean | number;
   nature?: 0 | 1 | null; // 0 = Debitor, 1 = Creditor
+  can_have_details?: boolean;
   children?: CodeItem[];
 }
 
@@ -137,6 +140,15 @@ export const CodesPage: React.FC = () => {
   }, []);
 
   /**
+   * setLocalizedRequiredValidity
+   * Sets a localized message for native required-field validation.
+   * - Uses i18n to show Farsi in fa mode, English otherwise.
+   */
+  function setLocalizedRequiredValidity(input: HTMLInputElement) {
+    input.setCustomValidity(t('validation.requiredField', 'Please fill out this field'));
+  }
+
+  /**
    * Reset create form fields to Group with next available code.
    * - Sets kind to 'group'.
    * - Clears title and parent.
@@ -198,7 +210,30 @@ export const CodesPage: React.FC = () => {
     const check = validateParentKind(form.kind, form.parent_id);
     if (!check.ok) {
       setCreating(false);
-      setError(check.message || t('common.error', 'Error'));
+      setAlertType('error');
+      setAlertTitle(t('common.error', 'Error'));
+      setAlertMessage(check.message || t('common.error', 'Error'));
+      setAlertOpen(true);
+      return;
+    }
+
+    // Strict digit-length validation based on environment configuration
+    const expectedLen = form.kind === 'group'
+      ? config.CODE_DIGITS.group
+      : form.kind === 'general'
+        ? config.CODE_DIGITS.general
+        : config.CODE_DIGITS.specific;
+    if (String(form.code).length !== expectedLen) {
+      const msgKey = form.kind === 'group'
+        ? 'pages.codes.codeLength.group'
+        : form.kind === 'general'
+          ? 'pages.codes.codeLength.general'
+          : 'pages.codes.codeLength.specific';
+      setCreating(false);
+      setAlertType('error');
+      setAlertTitle(t('common.error', 'Error'));
+      setAlertMessage(t(msgKey, { digits: expectedLen, defaultValue: `Code must be ${expectedLen} digits.` }));
+      setAlertOpen(true);
       return;
     }
 
@@ -208,11 +243,13 @@ export const CodesPage: React.FC = () => {
       resetCreateForm();
       await fetchAll();
     } catch (e: any) {
-      if (e.response?.status === 409) {
-        setError(t('pages.codes.conflict', 'This code already exists.'));
-      } else {
-        setError(e?.response?.data?.message || t('common.error', 'Error'));
-      }
+      const msg = e?.response?.status === 409
+        ? t('pages.codes.conflict', 'This code already exists.')
+        : e?.response?.data?.message || t('common.error', 'Error');
+      setAlertType('error');
+      setAlertTitle(t('common.error', 'Error'));
+      setAlertMessage(msg);
+      setAlertOpen(true);
     } finally {
       setCreating(false);
     }
@@ -229,7 +266,30 @@ export const CodesPage: React.FC = () => {
     const check = validateParentKind(editForm.kind, editForm.parent_id);
     if (!check.ok) {
       setSaving(false);
-      setError(check.message || t('common.error', 'Error'));
+      setAlertType('error');
+      setAlertTitle(t('common.error', 'Error'));
+      setAlertMessage(check.message || t('common.error', 'Error'));
+      setAlertOpen(true);
+      return;
+    }
+
+    // Strict digit-length validation for edit
+    const expectedLenEdit = editForm.kind === 'group'
+      ? config.CODE_DIGITS.group
+      : editForm.kind === 'general'
+        ? config.CODE_DIGITS.general
+        : config.CODE_DIGITS.specific;
+    if (String(editForm.code).length !== expectedLenEdit) {
+      const msgKey = editForm.kind === 'group'
+        ? 'pages.codes.codeLength.group'
+        : editForm.kind === 'general'
+          ? 'pages.codes.codeLength.general'
+          : 'pages.codes.codeLength.specific';
+      setSaving(false);
+      setAlertType('error');
+      setAlertTitle(t('common.error', 'Error'));
+      setAlertMessage(t(msgKey, { digits: expectedLenEdit, defaultValue: `Code must be ${expectedLenEdit} digits.` }));
+      setAlertOpen(true);
       return;
     }
 
@@ -238,11 +298,13 @@ export const CodesPage: React.FC = () => {
       cancelEdit();
       await fetchAll();
     } catch (e: any) {
-      if (e.response?.status === 409) {
-        setError(t('pages.codes.conflict', 'This code already exists.'));
-      } else {
-        setError(e?.response?.data?.message || t('common.error', 'Error'));
-      }
+      const msg = e?.response?.status === 409
+        ? t('pages.codes.conflict', 'This code already exists.')
+        : e?.response?.data?.message || t('common.error', 'Error');
+      setAlertType('error');
+      setAlertTitle(t('common.error', 'Error'));
+      setAlertMessage(msg);
+      setAlertOpen(true);
     } finally {
       setSaving(false);
     }
@@ -305,6 +367,31 @@ export const CodesPage: React.FC = () => {
     });
   }
 
+  /**
+   * toggleCanHaveDetails
+   * Toggles the `can_have_details` flag on a specific code.
+   * - Sends a PATCH to backend with the next boolean value.
+   * - Refreshes the tree/list on success and shows localized errors on failure.
+   */
+  async function toggleCanHaveDetails(node: CodeItem) {
+    try {
+      const current = node.can_have_details ?? true;
+      const next = !current;
+      await axios.patch(
+        `${config.API_ENDPOINTS.base}/v1/codes/${node.id}`,
+        { can_have_details: next },
+        { headers: { 'Accept-Language': getCurrentLang() } }
+      );
+      await fetchAll();
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || t('pages.codes.canHaveDetails.updateFailed', 'Failed to update details setting');
+      setAlertType('error');
+      setAlertTitle(t('common.error', 'Error'));
+      setAlertMessage(msg);
+      setAlertOpen(true);
+    }
+  }
+
   // Parent options computed per-form based on selected kind
   const parentOptionsForCreate = useMemo<ParentOption[]>(() => {
     if (form.kind === 'group') return [];
@@ -340,37 +427,44 @@ export const CodesPage: React.FC = () => {
 
   /**
    * Compute suggested code for create form based on kind and selected parent.
-   * - Group: next two-digit after highest group code.
-   * - General: prefix parent group code + next two-digit child.
-   * - Specific: prefix parent general code + next two-digit child.
+   * - Group: next after highest group code, padded to configured digits.
+   * - General: prefix parent group code + next child with configured suffix length.
+   * - Specific: prefix parent general code + next child with configured suffix length.
    */
   function getSuggestedCode(kind: FormState['kind'], parentId: string | null): string {
-    const pad2 = (n: number) => String(n).padStart(2, '0');
+    // Helper to pad a number to desired width
+    const pad = (n: number, width: number) => String(n).padStart(width, '0');
+
     if (kind === 'group') {
+      const width = config.CODE_DIGITS.group;
       const nums = flat
         .filter((c) => c.kind === 'group')
         .map((c) => parseInt(String(c.code), 10))
         .filter((n) => Number.isFinite(n));
       const next = (nums.length ? Math.max(...nums) : 0) + 1;
-      return pad2(next);
+      return pad(next, width);
     }
+
     if (!parentId) return '';
     const parent = flat.find((c) => c.id === parentId);
     if (!parent || !parent.code) return '';
+
     const prefix = String(parent.code);
-    const expectedLen = kind === 'general' ? 4 : 6;
+    const expectedLen = kind === 'general' ? config.CODE_DIGITS.general : config.CODE_DIGITS.specific;
+    const suffixLen = Math.max(expectedLen - prefix.length, 1);
+
     const siblings = flat.filter((c) => c.kind === kind && c.parent_id === parentId);
     let maxSuffix = 0;
     for (const s of siblings) {
       const codeStr = String(s.code || '');
-      if (codeStr.startsWith(prefix) && codeStr.length >= expectedLen) {
-        const suffixStr = codeStr.slice(prefix.length, prefix.length + 2);
+      if (codeStr.startsWith(prefix) && codeStr.length === expectedLen) {
+        const suffixStr = codeStr.slice(prefix.length, prefix.length + suffixLen);
         const num = parseInt(suffixStr, 10);
         if (Number.isFinite(num) && num > maxSuffix) maxSuffix = num;
       }
     }
     const nextSuffix = maxSuffix + 1;
-    return prefix + pad2(nextSuffix);
+    return prefix + pad(nextSuffix, suffixLen);
   }
 
   const suggestedCreateCode = useMemo(() => getSuggestedCode(form.kind, form.parent_id), [flat, form.kind, form.parent_id]);
@@ -465,6 +559,24 @@ export const CodesPage: React.FC = () => {
             <AddCircleOutlineIcon className="text-[20px]" />
           </IconButton>
         )}
+
+        {node.kind === 'specific' && (
+          <Tooltip title={(node.can_have_details ?? true) ? t('pages.codes.canHaveDetails.disable', 'Disable details') : t('pages.codes.canHaveDetails.enable', 'Enable details')}>
+            <IconButton
+              onClick={() => toggleCanHaveDetails(node)}
+              color={(node.can_have_details ?? true) ? 'success' : 'default'}
+              size="small"
+              aria-label={(node.can_have_details ?? true) ? (t('pages.codes.canHaveDetails.disable', 'Disable details') as string) : (t('pages.codes.canHaveDetails.enable', 'Enable details') as string)}
+            >
+              {(node.can_have_details ?? true) ? (
+                <ToggleOnIcon className="text-[22px]" />
+              ) : (
+                <ToggleOffIcon className="text-[22px]" />
+              )}
+            </IconButton>
+          </Tooltip>
+        )}
+
         <IconButton
           onClick={() => startEdit(node)}
           color="primary"
@@ -638,7 +750,7 @@ export const CodesPage: React.FC = () => {
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <Navbar />
       {/* Global alert dialog for this page */}
-      <AlertDialog open={alertOpen} title={alertTitle} message={alertMessage} onClose={() => setAlertOpen(false)} type={alertType} />
+      <AlertDialog open={alertOpen} title={alertTitle} message={alertMessage} onClose={() => setAlertOpen(false)} />
       <main className="gb-page w-full py-6">
           <h1 className="text-2xl font-semibold mb-6">{t('pages.codes.title', 'Codes Manager')}</h1>
 
@@ -689,27 +801,27 @@ export const CodesPage: React.FC = () => {
                         required
                         allowDecimal={false}
                         allowNegative={false}
-                        maxLength={form.kind === 'group' ? 2 : form.kind === 'general' ? 4 : form.kind === 'specific' ? 6 : undefined}
+                        maxLength={form.kind === 'group' ? config.CODE_DIGITS.group : form.kind === 'general' ? config.CODE_DIGITS.general : form.kind === 'specific' ? config.CODE_DIGITS.specific : undefined}
                       />
                       {form.kind === 'group' &&
                         form.code.length > 0 &&
-                        form.code.length !== 2 && (
+                        form.code.length !== config.CODE_DIGITS.group && (
                           <p className="mt-1 text-[11px] text-red-500">
-                            {t('pages.codes.groupCodeLength')}
+                            {t('pages.codes.codeLength.group', { digits: config.CODE_DIGITS.group, defaultValue: `Group code must be ${config.CODE_DIGITS.group} digits.` })}
                           </p>
                         )}
                       {form.kind === 'general' &&
                         form.code.length > 0 &&
-                        form.code.length !== 4 && (
+                        form.code.length !== config.CODE_DIGITS.general && (
                           <p className="mt-1 text-[11px] text-red-500">
-                            {t('pages.codes.generalCodeLength')}
+                            {t('pages.codes.codeLength.general', { digits: config.CODE_DIGITS.general, defaultValue: `General code must be ${config.CODE_DIGITS.general} digits.` })}
                           </p>
                         )}
                       {form.kind === 'specific' &&
                         form.code.length > 0 &&
-                        form.code.length !== 6 && (
+                        form.code.length !== config.CODE_DIGITS.specific && (
                           <p className="mt-1 text-[11px] text-red-500">
-                            {t('pages.codes.specificCodeLength')}
+                            {t('pages.codes.codeLength.specific', { digits: config.CODE_DIGITS.specific, defaultValue: `Specific code must be ${config.CODE_DIGITS.specific} digits.` })}
                           </p>
                         )}
 
@@ -721,6 +833,10 @@ export const CodesPage: React.FC = () => {
                         value={form.title}
                         onChange={(e) => setForm({ ...form, title: e.target.value })}
                         required
+                        inputProps={{
+                          onInvalid: (e: React.InvalidEvent<HTMLInputElement>) => setLocalizedRequiredValidity(e.currentTarget),
+                          onInput: (e: React.FormEvent<HTMLInputElement>) => e.currentTarget.setCustomValidity('')
+                        }}
                       />
                     </div>
                   </div>
@@ -808,27 +924,27 @@ export const CodesPage: React.FC = () => {
                         required
                         allowDecimal={false}
                         allowNegative={false}
-                        maxLength={editForm.kind === 'group' ? 2 : editForm.kind === 'general' ? 4 : editForm.kind === 'specific' ? 6 : undefined}
+                        maxLength={editForm.kind === 'group' ? config.CODE_DIGITS.group : editForm.kind === 'general' ? config.CODE_DIGITS.general : editForm.kind === 'specific' ? config.CODE_DIGITS.specific : undefined}
                       />
                       {editForm?.kind === 'group' &&
                         editForm.code.length > 0 &&
-                        editForm.code.length !== 2 && (
+                        editForm.code.length !== config.CODE_DIGITS.group && (
                           <p className="text-red-500 text-xs">
-                            {t('pages.codes.groupCodeLength')}
+                            {t('pages.codes.codeLength.group', { digits: config.CODE_DIGITS.group, defaultValue: `Group code must be ${config.CODE_DIGITS.group} digits.` })}
                           </p>
                         )}
                       {editForm?.kind === 'general' &&
                         editForm.code.length > 0 &&
-                        editForm.code.length !== 4 && (
+                        editForm.code.length !== config.CODE_DIGITS.general && (
                           <p className="text-red-500 text-xs">
-                            {t('pages.codes.generalCodeLength')}
+                            {t('pages.codes.codeLength.general', { digits: config.CODE_DIGITS.general, defaultValue: `General code must be ${config.CODE_DIGITS.general} digits.` })}
                           </p>
                         )}
                       {editForm?.kind === 'specific' &&
                         editForm.code.length > 0 &&
-                        editForm.code.length !== 6 && (
+                        editForm.code.length !== config.CODE_DIGITS.specific && (
                           <p className="text-red-500 text-xs">
-                            {t('pages.codes.specificCodeLength')}
+                            {t('pages.codes.codeLength.specific', { digits: config.CODE_DIGITS.specific, defaultValue: `Specific code must be ${config.CODE_DIGITS.specific} digits.` })}
                           </p>
                         )}
                     </div>
@@ -839,6 +955,10 @@ export const CodesPage: React.FC = () => {
                         value={editForm.title}
                         onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
                         required
+                        inputProps={{
+                          onInvalid: (e: React.InvalidEvent<HTMLInputElement>) => setLocalizedRequiredValidity(e.currentTarget),
+                          onInput: (e: React.FormEvent<HTMLInputElement>) => e.currentTarget.setCustomValidity('')
+                        }}
                       />
                     </div>
                   </div>

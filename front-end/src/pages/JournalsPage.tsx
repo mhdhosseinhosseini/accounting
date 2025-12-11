@@ -8,7 +8,7 @@ import axios from 'axios';
 import Navbar from '../components/Navbar';
 import { useTranslation } from 'react-i18next';
 import config from '../config';
-import JalaliDatePicker from '../components/JalaliDatePicker';
+import JalaliDatePicker from '../components/common/JalaliDatePicker';
 
 /**
  * JournalItemForm

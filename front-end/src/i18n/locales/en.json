@@ -31,7 +31,21 @@
     "to": "to",
     "of": "of",
     "totalRow": "results",
-    "actions": "Actions"
+    "actions": "Actions",
+    "cash": "Cash",
+    "cheque": "Cheque",
+    "check": "Check",
+    "card": "Card",
+    "transfer": "Transfer",
+    "select": "Select",
+    "noItems": "No items",
+    "errors": {
+      "required": "This field is required",
+      "min": "Must be ≥ {{min}}",
+      "max": "Must be ≤ {{max}}",
+      "noDecimal": "Decimals are not allowed",
+      "decimalPlaces": "Max {{count}} decimal places"
+    }
   },
   "health": {
     "title": "Service Health",
@@ -80,7 +94,17 @@
     "fiscalYears": "Fiscal Years",
     "quickLinks": "Quick Links",
     "details": "Details",
-    "detailLevels": "Detail Levels"
+    "detailLevels": "Detail Levels",
+    "treasury": "Treasury",
+    "treasuryCashboxes": "Cashboxes",
+    "treasuryBankReceipts": "Bank Receipts",
+    "treasuryPayments": "Payments",
+    "treasuryBanks": "Banks",
+    "treasuryBankAccounts": "Bank Accounts",
+    "treasuryManageBanks": "Manage Banks",
+    "treasuryChecks": "Manage Check",
+    "treasuryReceipts": "Receipts",
+    "treasurySettings": "Settings"
   },
   "actions": {
     "reset": "Reset",
@@ -105,13 +129,27 @@
     "renumbering": "Renumbering",
     "postFiltered": "Post filtered drafts",
     "addToList": "Add to list",
-    "removeFromList": "Remove from list"
+    "removeFromList": "Remove from list",
+    "deposit": "Deposit",
+    "clear": "Clear",
+    "issueCheck": "Issue Check",
+    "return": "Return"
   },
   "labels": {
     "root": "Root",
     "child": "Child",
     "none": "None",
     "feastWallYear": "Feast Wall Year"
+  },
+  "fields": {
+    "type": "Type",
+    "provider": "Provider",
+    "code": "Code",
+    "name": "Name",
+    "bankName": "Bank Name",
+    "title": "Title",
+    "isActive": "Active",
+    "value": "Value"
   },
   "pages": {
     "reports": {
@@ -142,7 +180,14 @@
       "addEdit": "Add/Edit",
       "linkedLevels": "Linked Detail Levels",
       "leafOnlyHint": "Only leaf levels can be linked.",
-      "deleteConfirm": "Delete this detail?"
+      "deleteConfirm": "Delete this detail?",
+      "kind": "Kind",
+      "kind.user": "User-defined",
+      "kind.system": "System-managed",
+      "systemManagedTooltip": {
+        "edit": "System-managed details cannot be edited",
+        "delete": "System-managed details cannot be deleted"
+      }
     },
     "detailLevels": {
       "treeTitle": "Detail Levels",
@@ -170,6 +215,17 @@
         "error": "Failed to create automatic journal"
       }
     },
+    "checks": {
+      "title": "Checks",
+      "statuses": {
+        "created": "Created",
+        "issued": "Issued",
+        "incashbox": "In Cashbox",
+        "deposited": "Deposited",
+        "cleared": "Cleared",
+        "returned": "Returned"
+      }
+    },
     "documents": {
       "title": "Documents",
       "filters": "Filters",
@@ -180,12 +236,156 @@
       "new": "New Document"
     },
     "documentForm": {
-      "title": "Document Form"
+      "title": "Document Form",
+      "confirmUnbalancedSave": "This document is unbalanced and will be saved as a draft. Continue?",
+      "confirmNatureMismatchDraft": "Some codes violate debit/credit nature. Save as draft?",
+      "detailsDisabled": "Details disabled for selected code"
+    },
+    "receipts": {
+      "title": "Receipts",
+      "list": "Receipts List",
+      "createTitle": "Create Receipt",
+      "editTitle": "Edit Receipt",
+      "printTitle": "Receipt",
+      "fields": {
+        "date": "Date",
+        "description": "Description",
+        "payer": "Payer",
+        "fiscalPeriod": "Fiscal Period",
+        "status": "Status",
+        "number": "Number",
+        "cashbox": "Cashbox"
+      },
+      "payer": {
+        "noOptions": "No payer found",
+        "noPartiesHelp": "No Parties exist yet. ",
+        "createPartyCta": "Create a Party",
+        "noDetailsHelp": "No Details exist yet. ",
+        "createDetailCta": "Create a Detail",
+        "thenSelectHint": " and then select it here."
+      },
+      "items": {
+        "title": "Items",
+        "instrumentType": "Instrument",
+        "details": "Details",
+        "amount": "Amount",
+        "cashbox": "Cashbox",
+        "bankAccount": "Bank Account",
+        "cardReader": "Card Reader",
+        "cardRef": "Card Ref Code",
+        "transferRef": "Transfer Ref No.",
+        "check": "Check",
+        "destinationType": "Destination",
+        "destinationId": "Destination"
+      },
+      "total": "Total",
+      "totalAmount": "Total Amount",
+      "leaveConfirm": "Discard unsaved changes?",
+      "validation": {
+        "form": {
+          "cashboxRequired": "Cashbox is required for cash or check items"
+        }
+      }
     },
     "codes": {
-      "codeOrTitle": "Search code or title"
+      "codeOrTitle": "Search code or title",
+      "codeLength": {
+        "group": "Group code must be {{digits}} digits.",
+        "general": "General code must be {{digits}} digits.",
+        "specific": "Specific code must be {{digits}} digits."
+      }
+    },
+    "treasury": {
+      "title": "Treasury",
+      "tabs": {
+        "receipts": "Receipts",
+        "payments": "Payments",
+        "registers": "Registers",
+        "cashboxes": "Cashboxes",
+        "banks": "Banks",
+        "bankAccounts": "Bank Accounts",
+        "checks": "Checks"
+      },
+      "createReceipt": "Create Receipt",
+      "createPayment": "Create Payment",
+      "listEmpty": "No records"
+    },
+    "cashboxes": {
+      "title": "Cashboxes",
+      "list": "Cashboxes List",
+      "create": "Create Cashbox",
+      "edit": "Edit Cashbox",
+      "deleteConfirm": "Delete this cashbox?",
+      "codeAutoGeneratedHint": "Auto-generated based on last cashbox; unique in details"
+    },
+    "banks": {
+      "title": "Banks",
+      "create": "Create Bank",
+      "list": "Banks List",
+      "edit": "Edit Bank",
+      "deleteConfirm": "Delete this bank?"
+    },
+    "bankAccounts": {
+      "title": "Bank Accounts",
+      "list": "Bank Accounts List",
+      "create": "Create Bank Account",
+      "edit": "Edit Bank Account",
+      "deleteConfirm": "Delete this bank account?",
+      "deleteCheckbookConfirm": "Delete this checkbook?",
+      "deleteCardReaderConfirm": "Delete this card reader?",
+      "created": "Created successfully",
+      "updated": "Updated successfully",
+      "checkbooks": "Checkbooks",
+      "cardReaders": "Card Readers",
+      "manageCheckbooks": "Manage Checkbooks",
+      "manageCardReaders": "Manage Card Readers",
+      "exhausted": "Exhausted",
+      "lost": "Lost",
+      "damaged": "Damaged",
+      "deleted": "Deleted successfully",
+      "errors": {
+        "checkbookHasIssuedChecks": "Cannot delete: checkbook has issued checks",
+        "cardReaderReferencedByPayments": "Cannot delete: card reader referenced by payments",
+        "referencedByCheckbooks": "Cannot delete: referenced by checkbooks"
+      }
+    },
+    "manageBanks": {
+      "title": "Manage Banks"
+    },
+    "banks": {
+      "list": "Banks List",
+      "create": "Create Bank",
+      "deleteConfirm": "Delete this bank?",
+      "deleted": "Deleted successfully",
+      "errors": {
+        "referencedByAccounts": "Cannot delete: referenced by bank accounts"
+      }
+    },
+    "treasury": {
+      "tabs": {
+        "banks": "Banks",
+        "bankAccounts": "Bank Accounts"
+      }
     }
   },
+    "checks": {
+       "title": "Manage Check",
+       "outgoing": "Outgoing Checks",
+       "incoming": "Incoming Checks",
+       "issueOutgoing": "Issue Outgoing Check",
+       "issueIncoming": "Issue Incoming Check",
+       "outgoingRecent": "Recent Outgoing Checks",
+       "incomingRecent": "Recent Incoming Checks",
+       "incomingPlaceholder": "Incoming checks page is under construction.",
+       "statuses": {
+         "created": "Created",
+         "issued": "Issued",
+         "deposited": "Deposited",
+         "cleared": "Cleared",
+         "returned": "Returned"
+       }
+     },
+  "common": { "noItems": "No items" },
   "fields": {
     "fromDate": "From Date",
     "toDate": "To Date",
@@ -220,6 +420,8 @@
     "specificCodes": "Specific Codes",
     "isActive": "Active",
     "amount": "Amount",
+    "startingAmount": "Starting Amount",
+    "startingDate": "Starting Date",
     "debitCodeId": "Debit Code ID",
     "creditCodeId": "Credit Code ID",
     "detailId": "Detail ID",
@@ -237,13 +439,59 @@
     "note": "Notes",
     "difference": "Difference",
     "row": "Row",
-    "lines": "Lines"
+    "lines": "Lines",
+    "cashboxId": "Cashbox ID",
+    "handledBy": "Handled By",
+    "method": "Method",
+    "chequeNumber": "Cheque Number",
+    "bankName": "Bank Name",
+    "issuer": "Issuer",
+    "beneficiary": "Beneficiary",
+    "issueDate": "Issue Date",
+    "dueDate": "Due Date",
+    "accountNumber": "Account Number",
+    "kindOfAccount": "Kind of Account",
+    "cardNumber": "Card Number",
+    "iban": "IBAN",
+    "series": "Series",
+    "startNumber": "Start Number",
+    "endNumber": "End Number",
+    "nextNumber": "Next Number",
+    "issueDate": "Issue Date",
+    "receivedDate": "Received Date",
+    "pspProvider": "PSP Provider",
+    "terminalId": "Terminal ID",
+    "merchantId": "Merchant ID",
+    "deviceSerial": "Device Serial",
+    "brand": "Brand",
+    "model": "Model",
+    "installDate": "Install Date",
+    "lastSettlementDate": "Last Settlement",
+    "pageCount": "Page Count",
+    "bankAccount": "Bank Account",
+    "checkbook": "Checkbook",
+    "checkDate": "Check Date",
+    "checkSerial": "Serial Number",
+    "lastIssuedNumber": "Last Issued",
+    "nextSuggestion": "Next Suggestion",
+    "recipientDetail": "Recipient (Detail)",
+    "range": "Range",
+    "sayadi": "Sayadi Code",
+    "codes": {
+      "canHaveDetails": {
+        "enable": "Enable details",
+        "disable": "Disable details",
+        "updateFailed": "Failed to update details setting"
+      }
+    }
   },
   "validation": {
     "noItems": "No items to submit",
     "missingFields": "Please fill all fields",
+    "requiredField": "Please fill out this field",
     "dateRequired": "Please choose a date",
     "balancedRequired": "Debit and credit must be equal to save",
-    "uniqueDocNo": "This document number already exists"
+    "uniqueDocNo": "This document number already exists",
+    "bankRequired": "Please select a bank."
   }
 }

@@ -1,0 +1,38 @@
+/*
+ * Page-scoped input border styling for BankAccountCheckbooksPage
+ * Ensures all inputs show a gray border consistent with MUI (#e0e0e0)
+ */
+
+/* Base border for common inputs/selects/textarea and the JalaliDatePicker input */
+.checkbooks-page input,
+.checkbooks-page select,
+.checkbooks-page textarea,
+.checkbooks-page .rmdp-input {
+  border: 1px solid #e0e0e0 !important; /* MUI-like gray */
+}
+
+/* Focus state: slightly darker for visual feedback */
+.checkbooks-page input:focus,
+.checkbooks-page select:focus,
+.checkbooks-page textarea:focus,
+.checkbooks-page .rmdp-input:focus {
+  border-color: #cfcfcf !important; /* subtle focus */
+  outline: none;
+  box-shadow: none;
+}
+
+/* Disabled state: lighter gray */
+.checkbooks-page input:disabled,
+.checkbooks-page select:disabled,
+.checkbooks-page textarea:disabled,
+.checkbooks-page .rmdp-input:disabled {
+  border-color: #eeeeee !important;
+}
+
+/* Error state helper: if a component adds aria-invalid or error class */
+.checkbooks-page input[aria-invalid="true"],
+.checkbooks-page select[aria-invalid="true"],
+.checkbooks-page textarea[aria-invalid="true"],
+.checkbooks-page .rmdp-input.error {
+  border-color: #e57373 !important; /* MUI error-ish */
+}

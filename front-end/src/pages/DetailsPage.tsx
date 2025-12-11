@@ -22,6 +22,7 @@ interface DetailItem {
   code: string;
   title: string;
   is_active: boolean;
+  kind: boolean;
 }
 
 interface FormState {
@@ -334,8 +335,11 @@ const DetailsPage: React.FC = () => {
       const bv = b[sortBy];
       let cmp = 0;
       if (sortBy === 'code') {
-        // Numeric compare for code
-        cmp = Number(av) - Number(bv);
+        const as = toAsciiDigits(String(av));
+        const bs = toAsciiDigits(String(bv));
+        const isNum = (s: string) => /^\d+$/.test(s);
+        if (isNum(as) && isNum(bs)) cmp = Number(as) - Number(bs);
+        else cmp = as.localeCompare(bs, undefined, { numeric: true });
       } else if (typeof av === 'string' && typeof bv === 'string') {
         cmp = av.localeCompare(bv);
       } else {
@@ -492,6 +496,14 @@ const DetailsPage: React.FC = () => {
                        onSort={(k) => handleSort(k as keyof DetailItem)}
                        headerAlign='text-left'
                      />
+                    <TableSortHeader
+                      label={t('pages.details.kind', 'Kind')}
+                      sortKey={'kind'}
+                      currentSortBy={sortBy as any}
+                      currentSortDir={sortDir}
+                      onSort={(k) => handleSort(k as keyof DetailItem)}
+                      headerAlign='text-left'
+                    />
                      <th className="px-4 py-3 text-base font-medium text-gray-700 uppercase tracking-wider text-center">
                        {t('common.actions', 'Actions')}
                      </th>
@@ -503,12 +515,29 @@ const DetailsPage: React.FC = () => {
                        <td className={`py-2 px-2 font-mono ${isRTL ? 'text-right' : 'text-left'}`}>{it.code}</td>
                        <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'}`}>{it.title}</td>
                        <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'}`}>{it.is_active ? t('common.yes', 'Yes') : t('common.no', 'No')}</td>
+                      <td className={`${isRTL ? 'text-right' : 'text-left'} py-2 px-2`}>
+                        {it.kind ? t('pages.details.kind.user', 'User-defined') : t('pages.details.kind.system', 'System-managed')}
+                      </td>
                        <td className="py-2 px-2 text-center">
                          <div className="inline-flex items-center gap-2 justify-center">
-                           <IconButton onClick={() => openEdit(it)} color="primary" size="small" aria-label={t('actions.edit','Edit')}>
+                          <IconButton
+                            onClick={() => openEdit(it)}
+                            color="primary"
+                            size="small"
+                            aria-label={t('actions.edit','Edit')}
+                            disabled={!it.kind}
+                            title={!it.kind ? t('pages.details.systemManagedTooltip.edit', 'System-managed details cannot be edited') : t('actions.edit','Edit')}
+                          >
                              <EditIcon className="text-[20px]" />
                            </IconButton>
-                           <IconButton onClick={() => deleteDetail(it.id)} color="error" size="small" aria-label={t('common.delete','Delete')}>
+                          <IconButton
+                            onClick={() => deleteDetail(it.id)}
+                            color="error"
+                            size="small"
+                            aria-label={t('common.delete','Delete')}
+                            disabled={!it.kind}
+                            title={!it.kind ? t('pages.details.systemManagedTooltip.delete', 'System-managed details cannot be deleted') : t('common.delete','Delete')}
+                          >
                              <DeleteIcon />
                            </IconButton>
                          </div>

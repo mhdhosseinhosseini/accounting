@@ -8,7 +8,7 @@ import axios from 'axios';
 import Navbar from '../components/Navbar';
 import { useTranslation } from 'react-i18next';
 import config from '../config';
-import JalaliDateRangePicker from '../../../../admin/src/components/Common/JalaliDateRangePicker';
+import JalaliDateRangePicker from '../components/common/JalaliDateRangePicker';
 import DateObject from 'react-date-object';
 import persian from 'react-date-object/calendars/persian';
 import { getCurrentLang } from '../i18n';
@@ -23,6 +23,7 @@ import PrintIcon from '@mui/icons-material/Print';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import MultiSelect, { MultiSelectOption } from '../components/common/MultiSelect';
 import FormatListNumberedIcon from '@mui/icons-material/FormatListNumbered';
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 
 interface FiscalYearRef { id: number; name: string; start_date: string; end_date: string; is_closed?: boolean; }
 
@@ -33,7 +34,7 @@ interface DocumentListItem {
   date: string; // ISO YYYY-MM-DD (Gregorian storage)
   type?: string;
   provider?: string;
-  status?: string; // draft, posted
+  status?: string; // temporary, permanent
   description?: string; // journal description
   total?: number;
 }
@@ -138,7 +139,6 @@ const DocumentsPage: React.FC = () => {
    * Debug: logs input ISO, DateObject parsing, Jalali conversion parts, and final output.
    */
   function formatDisplayDate(iso?: string): string {
-    console.log('[DocumentsPage] formatDisplayDate: called', { iso });
     const obj = toDateObjectSafe(iso);
     if (!obj) {
       console.warn('[DocumentsPage] formatDisplayDate: invalid input, cannot build DateObject', { iso });
@@ -151,12 +151,6 @@ const DocumentsPage: React.FC = () => {
       const jd = String(j.day).padStart(2, '0');
       const out = `${jy}/${jm}/${jd}`;
       const outFa = toPersianDigits(out);
-      console.log('[DocumentsPage] formatDisplayDate: success', {
-        iso,
-        gregorian: `${obj.year}-${obj.month.number}-${obj.day}`,
-        jalaliAscii: out,
-        jalaliPersian: outFa,
-      });
       return outFa;
     } catch (err) {
       console.error('[DocumentsPage] formatDisplayDate: conversion error', { iso, err });
@@ -182,18 +176,21 @@ const DocumentsPage: React.FC = () => {
 
   /**
    * formatStatus
-   * Localizes journal status to Farsi when applicable.
+   * Localizes journal status using i18n keys for both EN/FA.
+   * Falls back to raw status when unknown.
    */
   function formatStatus(status?: string): string {
     const s = (status || '').toLowerCase();
-    const lang = getCurrentLang();
-    if (lang !== 'fa') return s || '-';
-    const map: Record<string, string> = {
-      draft: 'موقت',
-      posted: 'ثبت‌شده',
-      reversed: 'برگشتی',
-    };
-    return map[s] || (s ? s : '-');
+    switch (s) {
+      case 'draft':
+        return t('status.draft', getCurrentLang() === 'fa' ? 'پیش‌نویس' : 'Draft');
+      case 'temporary':
+        return t('status.temporary', getCurrentLang() === 'fa' ? 'موقت' : 'Temporary');
+      case 'permanent':
+        return t('status.permanent', getCurrentLang() === 'fa' ? 'دائمی' : 'Permanent');
+      default:
+        return s || '-';
+    }
   }
 
   /**
@@ -282,12 +279,10 @@ const DocumentsPage: React.FC = () => {
     setError('');
     try {
       const params = buildQueryParams();
-      console.log('[DocumentsPage] fetchDocuments: params', params);
       const res = await axios.get(`${config.API_ENDPOINTS.base}/v1/journals`, { params });
       const payload = res.data;
       const itemsArr: DocumentListItem[] = payload.items || payload || [];
       setItems(itemsArr);
-      console.log('[DocumentsPage] fetchDocuments: received items', itemsArr.map(i => ({ id: i.id, date: i.date })));
       setTotal(payload.total ?? itemsArr.length);
     } catch (e) {
       setError(t('fetch.error', 'Failed to fetch data'));
@@ -323,7 +318,7 @@ const DocumentsPage: React.FC = () => {
 
   /**
    * confirmDocument
-   * Posts a draft journal to 'posted' status.
+   * Posts a temporary journal to 'permanent' status.
    */
   async function confirmDocument(id: string): Promise<void> {
     try { await axios.post(`${config.API_ENDPOINTS.base}/v1/journals/${id}/post`); await fetchDocuments(); } catch {/* noop */}
@@ -331,7 +326,7 @@ const DocumentsPage: React.FC = () => {
 
   /**
    * deleteDocument
-   * Deletes a draft journal.
+   * Deletes a temporary journal.
    */
   async function deleteDocument(id: string): Promise<void> {
     try { await axios.delete(`${config.API_ENDPOINTS.base}/v1/journals/${id}`); await fetchDocuments(); } catch {/* noop */}
@@ -339,10 +334,159 @@ const DocumentsPage: React.FC = () => {
 
   /**
    * printDocument
-   * Fetches a journal for print preview (placeholder).
+   * Loads a journal by id and opens a print-friendly window with a detailed
+   * layout (header + items). The browser’s print dialog can be used to
+   * save as PDF. Supports EN/FA with RTL-aware styling and digit localization.
    */
   async function printDocument(id: string): Promise<void> {
-    try { await axios.get(`${config.API_ENDPOINTS.base}/v1/journals/${id}`); } catch {/* noop */}
+    try {
+      const lang = getCurrentLang();
+      const rtl = lang === 'fa';
+      const res = await axios.get(`${config.API_ENDPOINTS.base}/v1/journals/${id}`);
+      const data = res.data?.item || res.data;
+      if (!data) return;
+
+      const docCode = String(data.code || '');
+      const docDate = formatDisplayDate(String(data.date || ''));
+      const rawStatus = String(data.status || '').trim();
+      const docStatus = rtl
+        ? ({ temporary: 'موقت', draft: 'پیش‌نویس', permanent: 'قطعی', posted: 'ثبت‌شده' }[rawStatus] || rawStatus)
+        : rawStatus;
+      const docRefNo = String(data.ref_no || '');
+      const providerRaw = String(data.provider || '').trim();
+      const docProvider = formatProvider(providerRaw);
+      const docDescription = String(data.description || '');
+
+      const items: any[] = Array.isArray(data.items) ? data.items : [];
+
+      // Build printable HTML with simple styling, RTL-aware.
+      const title = rtl ? 'سند حسابداری' : 'Accounting Journal';
+      const headerLabel = rtl ? 'مشخصات سند' : 'Journal Header';
+      const itemsLabel = rtl ? 'آیتم‌های سند' : 'Journal Items';
+
+      // Column labels with localization fallbacks
+      const colRow = rtl ? 'ردیف' : 'Row';
+      const colAccount = rtl ? 'حساب' : 'Account';
+      const colDetail = rtl ? 'تفصیل' : 'Detail';
+      const colDescription = rtl ? 'توضیحات' : 'Description';
+      const colDebit = rtl ? 'بدهکار' : 'Debit';
+      const colCredit = rtl ? 'بستانکار' : 'Credit';
+
+      const safeText = (s: string) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
+
+      const rowsHtml = items.map((it, idx) => {
+        const accountCodeRaw = String(it.account_code || '');
+        const detailCodeRaw = String(it.detail_code || '');
+        const accountTitleRaw = String(it.account_title || '');
+        const detailTitleRaw = String(it.detail_title || '');
+        const accountCode = rtl ? toPersianDigits(accountCodeRaw) : accountCodeRaw;
+        const detailCode = rtl ? toPersianDigits(detailCodeRaw) : detailCodeRaw;
+        const accountTitle = safeText(accountTitleRaw);
+        const detailTitle = safeText(detailTitleRaw);
+        // Show code first, then title (e.g., "111007 — موجودی کارت خوان های ریالی")
+        const accountDisplay = (accountTitle || accountCode) ? `${accountCode}${accountTitle && accountCode ? ' — ' : ''}${accountTitle}` : '-';
+        const detailDisplay = (detailTitle || detailCode) ? `${detailCode}${detailTitle && detailCode ? ' — ' : ''}${detailTitle}` : '-';
+        const desc = safeText(String(it.description || ''));
+        const debitStr = formatAmountNoDecimals(it.debit ?? 0);
+        const creditStr = formatAmountNoDecimals(it.credit ?? 0);
+        const rowNum = rtl ? toPersianDigits(String(idx + 1)) : String(idx + 1);
+        return `<tr>
+          <td>${rowNum}</td>
+          <td>${accountDisplay}</td>
+          <td>${detailDisplay}</td>
+          <td>${desc}</td>
+          <td class="amount text-end">${debitStr}</td>
+          <td class="amount text-end">${creditStr}</td>
+        </tr>`;
+      }).join('');
+
+      const codeDisp = rtl ? toPersianDigits(docCode) : docCode;
+      const refDisp = rtl ? toPersianDigits(docRefNo) : docRefNo;
+
+      const html = `<!doctype html>
+<html lang="${rtl ? 'fa' : 'en'}" dir="${rtl ? 'rtl' : 'ltr'}">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${safeText(title)}</title>
+${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap" />' : ''}
+<style>
+  body { font-family: ${rtl ? "'Vazirmatn', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif" : "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"}; color: #0f172a; background: #ffffff; margin: 16px; }
+  h1, h2 { margin: 0 0 8px; }
+  .muted { color: #475569; }
+  .section { margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: ${rtl ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr 1fr'}; gap: 8px; }
+  .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #f8fafc; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { border: 1px solid #e5e7eb; padding: 6px 8px; font-size: 13px; }
+  th { background: #f1f5f9; text-align: ${rtl ? 'right' : 'left'}; }
+  td { text-align: ${rtl ? 'right' : 'left'}; }
+  .text-end { text-align: ${rtl ? 'left' : 'right'}; }
+  .amount { background: #f8fafc; }
+  @page { size: A4 landscape; margin: 16mm; }
+</style>
+</head>
+<body>
+  <h1>${safeText(title)}</h1>
+  <div class="section card">
+    <h2 class="muted">${safeText(headerLabel)}</h2>
+    <div class="grid">
+      <div><strong>${rtl ? 'شماره سند' : 'Document Code'}:</strong> ${codeDisp || '-'}</div>
+      <div><strong>${rtl ? 'شماره مرجع' : 'Ref No'}:</strong> ${refDisp || '-'}</div>
+      <div><strong>${rtl ? 'تاریخ' : 'Date'}:</strong> ${docDate || '-'}</div>
+      <div><strong>${rtl ? 'وضعیت' : 'Status'}:</strong> ${safeText(docStatus) || '-'}</div>
+      <div><strong>${rtl ? 'ارائه‌دهنده' : 'Provider'}:</strong> ${safeText(docProvider) || '-'}</div>
+      <div style="grid-column: span 3"><strong>${rtl ? 'توضیحات' : 'Description'}:</strong> ${safeText(docDescription) || '-'}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2 class="muted">${safeText(itemsLabel)}</h2>
+    <table>
+      <colgroup>
+              <col style="width: 6%" />
+              <col style="width: 25%" />
+              <col style="width: 25%" />
+              <col style="width: 22%" />
+              <col style="width: 11%" />
+              <col style="width: 11%" />
+            </colgroup>
+      <thead>
+        <tr>
+          <th>${safeText(colRow)}</th>
+          <th>${safeText(colAccount)}</th>
+          <th>${safeText(colDetail)}</th>
+          <th>${safeText(colDescription)}</th>
+          <th>${safeText(colDebit)}</th>
+          <th>${safeText(colCredit)}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    // Auto-focus the window and trigger print, enabling Save as PDF in browser
+    window.focus();
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        try { window.print(); } catch (e) {}
+      }, 200);
+    });
+  </script>
+</body>
+</html>`;
+
+      const printWin = window.open('', '_blank');
+      if (!printWin) { return; }
+      printWin.document.open('text/html');
+      printWin.document.write(html);
+      printWin.document.close();
+    } catch (e) {
+      setError(t('pages.documents.printFailed', getCurrentLang() === 'fa' ? 'نمایش چاپ سند ناموفق بود' : 'Failed to open print view'));
+    }
   }
 
   // Initial loads and reactive fetching
@@ -358,8 +502,9 @@ const DocumentsPage: React.FC = () => {
   
   // Build options for multi-select filters with translation-aware labels
   const statusOptions: MultiSelectOption[] = useMemo(() => ([
-    { value: 'draft', label: t('status.draft', isRTL ? 'موقت' : 'Draft') },
-    { value: 'posted', label: t('status.posted', isRTL ? 'ثبت‌شده' : 'Posted') },
+    { value: 'draft', label: t('status.draft', isRTL ? 'پیش‌نویس' : 'Draft') },
+    { value: 'temporary', label: t('status.temporary', isRTL ? 'موقت' : 'Temporary') },
+    { value: 'permanent', label: t('status.permanent', isRTL ? 'دائمی' : 'Permanent') },
   ]), [isRTL, t]);
 
   const typeOptions: MultiSelectOption[] = useMemo(() => ([
@@ -385,7 +530,7 @@ const DocumentsPage: React.FC = () => {
 
   /**
    * handleBulkPostFiltered
-   * Posts all currently filtered draft documents. Validates on server side; shows localized errors.
+   * Posts all currently filtered temporary documents. Validates on server side; shows localized errors.
    */
   async function handleBulkPostFiltered(): Promise<void> {
     if (!fyId) {
@@ -407,6 +552,91 @@ const DocumentsPage: React.FC = () => {
     } catch (e) {
       setError(t('pages.documents.bulkPostFailed', isRTL ? 'ارسال گروهی ناموفق بود' : 'Bulk post failed'));
     }
+  }
+
+  /**
+   * canModifyDocument
+   * Enables edit/delete only when provider is null/empty or 'content'.
+   */
+  function canModifyDocument(provider?: string | null): boolean {
+    const p = (provider || '').trim().toLowerCase();
+    return p === '' || p === 'content';
+  }
+
+  /**
+   * isTreasuryReceipt
+   * Returns true when provider is 'treasury' and type is 'receipt'.
+   */
+  function isTreasuryReceipt(doc: DocumentListItem): boolean {
+    const p = String(doc.provider || '').trim().toLowerCase();
+    const t = String(doc.type || '').trim().toLowerCase();
+    return p === 'treasury' && t === 'receipt';
+  }
+
+  /**
+   * canEditDocument
+   * Disables Edit for 'permanent' documents and for treasury receipts.
+   * Allows Edit for plain/content documents.
+   */
+  function canEditDocument(doc: DocumentListItem): boolean {
+    const p = String(doc.provider || '').trim().toLowerCase();
+    const t = String(doc.type || '').trim().toLowerCase();
+    const s = String(doc.status || '').trim().toLowerCase();
+    if (s === 'permanent') return false;
+    if (p === 'treasury' && t === 'receipt') return false;
+    if (p === '' || p === 'content') return true;
+    return false;
+  }
+
+  /**
+   * canDeleteDocument
+   * Enables Delete unless status is 'permanent'. Allows treasury receipts.
+   */
+  function canDeleteDocument(doc: DocumentListItem): boolean {
+    const s = String(doc.status || '').trim().toLowerCase();
+    if (s === 'permanent') return false;
+    const p = String(doc.provider || '').trim().toLowerCase();
+    const t = String(doc.type || '').trim().toLowerCase();
+    if (p === '' || p === 'content') return true;
+    if (p === 'treasury' && t === 'receipt') return true;
+    return false;
+  }
+
+  /**
+   * navigateEditForDocument
+   * Routes to the appropriate edit page based on provider/type.
+   * - Treasury receipt: resolves receipt by journal_id, navigates to /treasury/receipts/:id
+   * - Default: opens /documents/new?id=:journalId
+   */
+  async function navigateEditForDocument(doc: DocumentListItem): Promise<void> {
+    const provider = String(doc.provider || '').trim().toLowerCase();
+    const type = String(doc.type || '').trim().toLowerCase();
+    if (provider === 'treasury' && type === 'receipt') {
+      try {
+        const lang = getCurrentLang();
+        const res = await axios.get(`${config.API_ENDPOINTS.base}/v1/treasury/receipts/by-journal/${encodeURIComponent(doc.id)}`, { headers: { 'Accept-Language': lang } });
+        const rid = res.data?.item?.id || res.data?.id || null;
+        if (!rid) throw new Error('missing id');
+        navigate(`/treasury/receipts/${encodeURIComponent(rid)}`);
+        return;
+      } catch (e) {
+        setError(t('pages.documents.receiptResolveError', isRTL ? 'یافتن دریافتیِ مرتبط با این سند ممکن نیست' : 'Could not locate receipt for this document'));
+        return;
+      }
+    }
+    navigate(`/documents/new?id=${doc.id}`);
+  }
+
+  /**
+   * getDeleteConfirmMessage
+   * Returns localized delete confirm message.
+   * For treasury receipts, clarifies the receipt will become temporary and link removed.
+   */
+  function getDeleteConfirmMessage(doc?: DocumentListItem | null): string {
+    if (doc && isTreasuryReceipt(doc)) {
+      return t('pages.documents.deleteConfirmReceiptOrigin', isRTL ? 'این سند از دریافتی خزانه‌داری ایجاد شده است. با حذف آن، وضعیت دریافتی «موقت» می‌شود و ارتباطش حذف خواهد شد.' : 'This document comes from a Treasury receipt. Deleting it will make the receipt temporary and remove its link.');
+    }
+    return t('pages.documents.deleteConfirm', isRTL ? 'این سند موقت حذف شود؟' : 'Delete this temporary document?');
   }
 
   return (
@@ -540,26 +770,26 @@ const DocumentsPage: React.FC = () => {
                 </thead>
                 <tbody>
                   {items.map((doc) => (
-                    <tr key={doc.id} className="border-b border-gray-200 hover:bg-gray-50">
+                    <tr key={doc.id} className={`border-b border-gray-200 hover:bg-gray-50 ${doc.status === 'draft' ? 'bg-red-50' : ''}`}>
                       <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'}`}>{getCurrentLang() === 'fa' ? toPersianDigits(String(doc.code ?? '')) : doc.code}</td>
                       <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'}`}>{formatDisplayDate(doc.date)}</td>
-                      <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'} truncate`}>{doc.type || (isRTL ? 'عمومی' : 'General')}</td>
-                      <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'} truncate`}>{doc.provider || (isRTL ? 'حسابداری' : 'Accounting')}</td>
+                      <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'} truncate`}>{formatType(doc.type)}</td>
+                      <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'} truncate`}>{formatProvider(doc.provider)}</td>
                       <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'} truncate`}>{doc.description || '-'}</td>
                       <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'} truncate`}>{formatStatus(doc.status)}</td>
                       <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'}`}>{formatAmountNoDecimals(doc.total ?? 0)}</td>
                       <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'}`}>
                         <div className="flex flex-wrap gap-1">
-                          <IconButton onClick={() => navigate(`/documents/new?id=${doc.id}`)} color="primary" size="small" aria-label={t('actions.edit','Edit')}>
+                          <IconButton onClick={() => navigate(`/documents/new?id=${doc.id}`)} color="primary" size="small" aria-label={t('actions.edit','Edit')} disabled={!canEditDocument(doc)}>
                             <EditIcon className="text-[20px]" />
                           </IconButton>
-                          <IconButton onClick={() => { setDeleteTargetId(doc.id); setDeleteOpen(true); }} color="error" size="small" aria-label={t('actions.delete','Delete')}>
-                            <DeleteIcon />
+                          <IconButton onClick={() => { setDeleteTargetId(doc.id); setDeleteOpen(true); }} color="error" size="small" aria-label={t('actions.delete','Delete')} disabled={!canDeleteDocument(doc)}>
+                            {isTreasuryReceipt(doc) ? <ReceiptLongIcon className="text-[20px]" /> : <DeleteIcon className="text-[20px]" />}
                           </IconButton>
                           <IconButton onClick={() => printDocument(doc.id)} color="default" size="small" aria-label={t('actions.print','Print')}>
                             <PrintIcon />
                           </IconButton>
-                          <IconButton onClick={() => confirmDocument(doc.id)} color="success" size="small" disabled={doc.status !== 'draft'} aria-label={t('actions.confirm','Confirm')}>
+                          <IconButton onClick={() => confirmDocument(doc.id)} color="success" size="small" disabled={doc.status !== 'temporary'} aria-label={t('actions.confirm','Confirm')}>
                             <CheckCircleIcon />
                           </IconButton>
                         </div>
@@ -573,7 +803,7 @@ const DocumentsPage: React.FC = () => {
               <ConfirmDialog
                 open={deleteOpen}
                 title={t('actions.delete', 'Delete')}
-                message={t('pages.documents.deleteConfirm', 'Delete this draft document?')}
+                message={getDeleteConfirmMessage(items.find((i) => i.id === deleteTargetId))}
                 onConfirm={async () => { if (deleteTargetId != null) { await deleteDocument(deleteTargetId); } setDeleteOpen(false); setDeleteTargetId(null); }}
                 onCancel={() => { setDeleteOpen(false); setDeleteTargetId(null); }}
                 type="danger"
@@ -584,7 +814,7 @@ const DocumentsPage: React.FC = () => {
               <ConfirmDialog
                 open={confirmBulkOpen}
                 title={t('pages.documents.bulkPostConfirmTitle', isRTL ? 'ارسال گروهی اسناد' : 'Bulk post documents')}
-                message={t('pages.documents.bulkPostConfirmMessage', isRTL ? 'این عملیات همه اسناد موقتِ فیلترشده را به وضعیت ثبت‌شده (دائمی) تغییر می‌دهد. ادامه می‌دهید؟' : 'This will change all filtered draft documents to posted (permanent). Continue?')}
+                message={t('pages.documents.bulkPostConfirmMessage', isRTL ? 'این عملیات همه اسناد موقتِ فیلترشده را به وضعیت دائمی تغییر می‌دهد. ادامه می‌دهید؟' : 'This will change all filtered temporary documents to permanent. Continue?')}
                 onConfirm={async () => { await handleBulkPostFiltered(); closeBulkPostConfirm(); }}
                 onCancel={() => { closeBulkPostConfirm(); }}
                 type="warning"
@@ -647,4 +877,73 @@ function getDateRangeWrapperClass(): string {
  */
 function getColumnWidths(): number[] {
   return [10, 8, 10, 10, 32, 8, 12, 10];
+}
+
+
+/**
+ * formatType
+ * Localizes journal type ('general', 'receipt', 'payment', 'opening', 'closing', 'adjustment', 'treasury')
+ * based on the current language.
+ */
+function formatType(type?: string): string {
+  const raw = String(type || '').trim().toLowerCase();
+  const lang = getCurrentLang();
+  if (lang === 'fa') {
+    const mapFa: Record<string, string> = {
+      general: 'عمومی',
+      receipt: 'دریافت',
+      payment: 'پرداخت',
+      opening: 'افتتاحیه',
+      closing: 'اختتامیه',
+      adjustment: 'اصلاحی',
+      treasury: 'خزانه'
+    };
+    return mapFa[raw] || (raw ? raw : 'عمومی');
+  } else {
+    const mapEn: Record<string, string> = {
+      general: 'General',
+      receipt: 'Receipt',
+      payment: 'Payment',
+      opening: 'Opening',
+      closing: 'Closing',
+      adjustment: 'Adjustment',
+      treasury: 'Treasury'
+    };
+    return mapEn[raw] || (raw ? raw : 'General');
+  }
+}
+
+/**
+ * formatProvider
+ * Localizes journal provider ('treasury','accountant','accounting','content','sales','purchase','warehouse','system')
+ * based on the current language. Falls back to 'Accounting'/'حسابداری' when empty or unknown.
+ */
+function formatProvider(provider?: string): string {
+  const raw = String(provider || '').trim().toLowerCase();
+  const lang = getCurrentLang();
+  if (lang === 'fa') {
+    const mapFa: Record<string, string> = {
+      accountant: 'حسابدار',
+      accounting: 'حسابداری',
+      treasury: 'خزانه‌داری',
+      sales: 'فروش',
+      purchase: 'خرید',
+      warehouse: 'انبار',
+      content: 'محتوا',
+      system: 'سیستم'
+    };
+    return mapFa[raw] || (raw ? raw : 'حسابداری');
+  } else {
+    const mapEn: Record<string, string> = {
+      accountant: 'Accountant',
+      accounting: 'Accounting',
+      treasury: 'Treasury',
+      sales: 'Sales',
+      purchase: 'Purchase',
+      warehouse: 'Warehouse',
+      content: 'Content',
+      system: 'System'
+    };
+    return mapEn[raw] || (raw ? raw : 'Accounting');
+  }
 }

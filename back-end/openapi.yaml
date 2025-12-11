@@ -791,8 +791,6 @@ paths:
           description: Duplicate reference number
         '500':
           description: Server error
-        '404':
-          description: Not found
   /v1/products:
     get:
       summary: List products
@@ -1617,6 +1615,154 @@ paths:
                     $ref: '#/components/schemas/ProfitLossSummary'
                   message:
                     type: string
+  /v1/treasury/receipts:
+    get:
+      summary: List receipts
+      x-i18n:
+        summary:
+          en: List receipts
+          fa: فهرست رسیدها
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Receipt'
+    post:
+      summary: Create receipt (draft)
+      x-i18n:
+        summary:
+          en: Create receipt (draft)
+          fa: ایجاد رسید (پیش‌نویس)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Receipt'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/Receipt'
+  /v1/treasury/receipts/{id}:
+    get:
+      summary: Fetch a receipt
+      x-i18n:
+        summary:
+          en: Fetch a receipt
+          fa: دریافت رسید
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/Receipt'
+        '404':
+          description: Not Found
+    put:
+      summary: Update draft receipt
+      x-i18n:
+        summary:
+          en: Update draft receipt
+          fa: به‌روزرسانی رسید پیش‌نویس
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Receipt'
+      responses:
+        '200':
+          description: OK
+        '409':
+          description: Cannot modify posted receipt
+    delete:
+      summary: Delete draft receipt
+      x-i18n:
+        summary:
+          en: Delete draft receipt
+          fa: حذف رسید پیش‌نویس
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+        '409':
+          description: Cannot delete posted receipt
+  /v1/treasury/receipts/{id}/post:
+    post:
+      summary: Post receipt
+      x-i18n:
+        summary:
+          en: Post receipt
+          fa: ثبت نهایی رسید
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+        '400':
+          description: Validation error
 components:
   securitySchemes:
     bearerAuth:
@@ -1938,3 +2084,114 @@ components:
         profit:
           type: number
       required: [revenue, expense, profit]
+    Cashbox:
+      type: object
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        handler_detail_id:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        starting_amount:
+          type: number
+        starting_date:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+      required: [id, code, name, is_active]
+    CashboxInput:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        handler_detail_id:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        starting_amount:
+          type: number
+        starting_date:
+          type: string
+          format: date-time
+      required: [code, name]
+    ReceiptStatus:
+      type: string
+      enum: [draft, posted, canceled]
+    InstrumentType:
+      type: string
+      enum: [cash, card, transfer, check]
+    ReceiptItem:
+      type: object
+      properties:
+        id:
+          type: string
+        instrumentType:
+          $ref: '#/components/schemas/InstrumentType'
+        amount:
+          type: number
+        cashboxId:
+          type: string
+          nullable: true
+        bankAccountId:
+          type: string
+          nullable: true
+        cardRef:
+          type: string
+          nullable: true
+        transferRef:
+          type: string
+          nullable: true
+        checkId:
+          type: string
+          nullable: true
+        destinationType:
+          type: string
+          enum: [cashbox, bank]
+          nullable: true
+        destinationId:
+          type: string
+          nullable: true
+        position:
+          type: integer
+          nullable: true
+      required: [id, instrumentType, amount]
+    Receipt:
+      type: object
+      properties:
+        id:
+          type: string
+        number:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ReceiptStatus'
+        date:
+          type: string
+          format: date-time
+        fiscalYearId:
+          type: string
+          nullable: true
+        partyId:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        totalAmount:
+          type: number
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceiptItem'
+      required: [id, status, date, totalAmount]

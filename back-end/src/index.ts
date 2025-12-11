@@ -14,7 +14,7 @@ import { fiscalYearsRouter } from './routes/fiscalYears';
 // import { accountsRouter } from './routes/accounts';
 import { journalsRouter } from './routes/journals';
 import { productsRouter } from './routes/products';
-import { partiesRouter } from './routes/parties';
+// import { partiesRouter } from './routes/parties';
 import { warehousesRouter } from './routes/warehouses';
 import { invoicesRouter } from './routes/invoices';
 import { inventoryRouter } from './routes/inventory';
@@ -28,9 +28,13 @@ import { reportsRouter } from './routes/reports';
 import { detailsRouter } from './routes/details';
 import codesRouter from './routes/codes';
 import { detailLevelsRouter } from './routes/detailLevels';
+import { treasuryRouter } from './routes/treasury';
+import settingsRouter from './routes/settings';
 
 // Load environment variables
 dotenv.config();
+// Also load overrides from .env.local if present
+dotenv.config({ path: '.env.local' });
 
 // Parsed OpenAPI spec cache for debugging Swagger UI
 let openapiSpec: any | null = null;
@@ -115,7 +119,7 @@ function createApp() {
   // app.use('/api/v1/accounts', accountsRouter); // accounts removed
   app.use('/api/v1/journals', journalsRouter);
   app.use('/api/v1/products', productsRouter);
-  app.use('/api/v1/parties', partiesRouter);
+  // app.use('/api/v1/parties', partiesRouter);
   app.use('/api/v1/warehouses', warehousesRouter);
   app.use('/api/v1/invoices', invoicesRouter);
   app.use('/api/v1/inventory', inventoryRouter);
@@ -123,6 +127,8 @@ function createApp() {
   app.use('/api/v1/details', detailsRouter);
   app.use('/api/v1/codes', codesRouter);
   app.use('/api/v1/detail-levels', detailLevelsRouter);
+  app.use('/api/v1/treasury', treasuryRouter);
+  app.use('/api/v1/settings', settingsRouter);
 
   // Journals endpoints are handled by journalsRouter mounted above.
 

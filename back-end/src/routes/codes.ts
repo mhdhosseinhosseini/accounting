@@ -20,6 +20,7 @@ interface CodeRecord {
   parent_id: string | null;
   is_active: boolean | number;
   nature?: number | null;
+  can_have_details?: boolean;
   created_at?: string;
 }
 
@@ -177,10 +178,10 @@ codesRouter.post('/', async (req: Request, res: Response) => {
     const dup = await p.query('SELECT 1 FROM codes WHERE code = $1', [code]);
     if (dup.rowCount && dup.rows[0]) return res.status(409).json({ message: t('codes.duplicateCode', lang) });
 
-    // Insert
+    // Insert (defaults: is_active=true, can_have_details=true)
     await p.query(
-      'INSERT INTO codes (id, code, title, kind, parent_id, is_active, nature) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-      [id, code, title, kind, parentId, isActive, nature]
+      'INSERT INTO codes (id, code, title, kind, parent_id, is_active, nature, can_have_details) VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, TRUE))',
+      [id, code, title, kind, parentId, isActive, nature, (payload.can_have_details ?? null)]
     );
     const { rows } = await p.query('SELECT * FROM codes WHERE id = $1', [id]);
     return res.status(201).json({ message: t('codes.created', lang), data: rows[0] });
@@ -244,8 +245,8 @@ codesRouter.patch('/:id', async (req: Request, res: Response) => {
     }
 
     await p.query(
-      'UPDATE codes SET code = COALESCE($1, code), title = COALESCE($2, title), kind = COALESCE($3, kind), parent_id = COALESCE($4, parent_id), is_active = COALESCE($5, is_active), nature = CASE WHEN $7 = true THEN $6 ELSE nature END WHERE id = $8',
-      [payload.code || null, payload.title || null, payload.kind || null, (payload.parent_id ?? null), (payload.is_active ?? null), nature, natureProvided, id]
+      'UPDATE codes SET code = COALESCE($1, code), title = COALESCE($2, title), kind = COALESCE($3, kind), parent_id = COALESCE($4, parent_id), is_active = COALESCE($5, is_active), nature = CASE WHEN $7 = true THEN $6 ELSE nature END, can_have_details = COALESCE($8, can_have_details) WHERE id = $9',
+      [payload.code || null, payload.title || null, payload.kind || null, (payload.parent_id ?? null), (payload.is_active ?? null), nature, natureProvided, (payload.can_have_details ?? null), id]
     );
     const { rows } = await p.query('SELECT * FROM codes WHERE id = $1', [id]);
     return res.json({ message: t('codes.updated', lang), data: rows[0] });

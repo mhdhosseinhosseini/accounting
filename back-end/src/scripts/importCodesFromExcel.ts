@@ -72,6 +72,28 @@ function parseNature(val: any): number | null {
 }
 
 /**
+ * Normalize Farsi text for consistent storage and comparisons.
+ * - Replace Arabic Yeh 'ي' and Alef Maksura 'ى' with Persian Yeh 'ی'
+ * - Replace Arabic Kaf 'ك' with Persian Kaf 'ک'
+ * - Replace Taa Marbuta 'ة' with Heh 'ه'
+ * - Strip Arabic diacritics (tashkeel) to avoid search mismatches
+ */
+function normalizeFarsiText(input: any): string | undefined {
+  if (input === undefined || input === null) return undefined;
+  let s = String(input);
+  const map: Record<string, string> = {
+    'ي': 'ی',
+    'ى': 'ی',
+    'ك': 'ک',
+    'ة': 'ه',
+  };
+  s = s.replace(/[يىكة]/g, (ch) => map[ch] || ch);
+  // Remove diacritics (\u064B-\u065F and \u0670)
+  s = s.replace(/[\u064B-\u065F\u0670]/g, '');
+  return s.trim();
+}
+
+/**
  * Detect commonly used Farsi/English headers for code, name, group, nature.
  * Prioritizes likely matches found in the first row.
  */
@@ -147,8 +169,8 @@ function buildRowRecords(rows: any[], det: HeaderDetection, limit?: number): Row
     const r = rows[i];
     const codeRaw = det.codeCol ? r[det.codeCol] : undefined;
     const codeNorm = normalizeDigits(codeRaw);
-    const name = det.nameCol ? String(r[det.nameCol] || '').trim() : undefined;
-    const group = det.groupCol ? String(r[det.groupCol] || '').trim() : undefined;
+    const name = det.nameCol ? normalizeFarsiText(r[det.nameCol]) : undefined;
+    const group = det.groupCol ? normalizeFarsiText(r[det.groupCol]) : undefined;
     const natureRaw = det.natureCol ? r[det.natureCol] : undefined;
     const nature = parseNature(natureRaw);
     out.push({ idx: i, code_raw: codeRaw, code_norm: codeNorm, name, group, nature_raw: natureRaw, nature });

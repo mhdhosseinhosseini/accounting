@@ -12,6 +12,8 @@ export default defineConfig({
   },
   plugins: [react()],
   resolve: {
-    dedupe: ['react','react-dom','react-router','react-router-dom']
+    dedupe: ['react','react-dom','react-router','react-router-dom'],
+    // Prefer TypeScript sources over JS duplicates during dev/build
+    extensions: ['.tsx', '.ts', '.jsx', '.js', '.json']
   }
 });

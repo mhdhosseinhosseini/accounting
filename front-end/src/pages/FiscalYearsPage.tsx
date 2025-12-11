@@ -9,7 +9,7 @@ import axios from 'axios';
 import Navbar from '../components/Navbar';
 import { useTranslation } from 'react-i18next';
 import config from '../config';
-import JalaliDatePicker from '../components/JalaliDatePicker';
+import JalaliDatePicker from '../components/common/JalaliDatePicker';
 import DateObject from 'react-date-object';
 import persian from 'react-date-object/calendars/persian';
 import { getCurrentLang } from '../i18n';

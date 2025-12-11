@@ -9,3 +9,5 @@ front-end/.env.example
 back-end/tmp/acc_dump.sql
 back-end/.env.production
 back-end/src/scripts/copyPostgres.ts
+back-end/docs/~$اکسل-کدینگ-حسابداری-تولیدی-سپیدار1.xlsx
+back-end/docs/اکسل-کدینگ-حسابداری-تولیدی-سپیدار1.xlsx

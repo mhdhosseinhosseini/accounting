@@ -20,7 +20,7 @@ const invoiceItemInputSchema = z.object({
   unit_price: z.number().min(0),
 });
 
-/** Zod schema for creating an invoice (draft). */
+/** Zod schema for creating an invoice (temporary). */
 const invoiceCreateSchema = z.object({
   fiscal_year_id: z.string().uuid(),
   customer_id: z.string().uuid().optional().nullable(),
@@ -29,7 +29,7 @@ const invoiceCreateSchema = z.object({
   items: z.array(invoiceItemInputSchema).min(1),
 });
 
-/** Zod schema for updating an invoice (only when draft). */
+/** Zod schema for updating an invoice (only when temporary). */
 const invoiceUpdateSchema = z.object({
   fiscal_year_id: z.string().uuid().optional(),
   customer_id: z.string().uuid().optional().nullable(),
@@ -87,7 +87,7 @@ invoicesRouter.get('/:id', async (req: Request, res: Response) => {
 });
 
 /**
- * POST / - Create a draft invoice.
+ * POST / - Create a temporary invoice.
  * Validates items and computes totals.
  */
 invoicesRouter.post('/', async (req: Request, res: Response) => {
@@ -103,14 +103,14 @@ invoicesRouter.post('/', async (req: Request, res: Response) => {
     const client = await p.connect();
     try {
       await client.query('BEGIN');
-      await client.query(`INSERT INTO invoices (id, invoice_no, fiscal_year_id, customer_id, date, status, total) VALUES ($1, $2, $3, $4, $5, 'draft', $6)`, [id, invoice_no ?? null, fiscal_year_id ?? null, customer_id ?? null, date, total]);
+      await client.query(`INSERT INTO invoices (id, invoice_no, fiscal_year_id, customer_id, date, status, total) VALUES ($1, $2, $3, $4, $5, 'temporary', $6)`, [id, invoice_no ?? null, fiscal_year_id ?? null, customer_id ?? null, date, total]);
       for (const it of items) {
         const itemId = require('crypto').randomUUID();
         const lineTotal = Number(it.quantity) * Number(it.unit_price);
         await client.query(`INSERT INTO invoice_items (id, invoice_id, product_id, quantity, unit_price, total) VALUES ($1, $2, $3, $4, $5, $6)`, [itemId, id, it.product_id ?? null, it.quantity, it.unit_price, lineTotal]);
       }
       await client.query('COMMIT');
-      return res.status(201).json({ id, status: 'draft', message: t('invoices.created', lang) });
+      return res.status(201).json({ id, status: 'temporary', message: t('invoices.created', lang) });
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -123,7 +123,7 @@ invoicesRouter.post('/', async (req: Request, res: Response) => {
 });
 
 /**
- * PATCH /:id - Update invoice (only when in draft).
+ * PATCH /:id - Update invoice (only when in temporary).
  * Can update header and replace items if provided.
  */
 invoicesRouter.patch('/:id', async (req: Request, res: Response) => {
@@ -143,7 +143,7 @@ invoicesRouter.patch('/:id', async (req: Request, res: Response) => {
         return res.status(404).json({ ok: false, error: t('invoices.notFound', lang) });
       }
       const status = exist.rows[0].status as string;
-      if (status !== 'draft') {
+      if (status !== 'temporary') {
         client.release();
         return res.status(400).json({ ok: false, error: t('invoices.cannotModifyPosted', lang) });
       }
@@ -173,7 +173,7 @@ invoicesRouter.patch('/:id', async (req: Request, res: Response) => {
 });
 
 /**
- * DELETE /:id - Delete invoice if draft.
+ * DELETE /:id - Delete invoice if temporary.
  */
 invoicesRouter.delete('/:id', async (req: Request, res: Response) => {
   const lang: Lang = (req as any).lang || 'en';
@@ -189,7 +189,7 @@ invoicesRouter.delete('/:id', async (req: Request, res: Response) => {
         return res.status(404).json({ ok: false, error: t('invoices.notFound', lang) });
       }
       const status = exist.rows[0].status as string;
-      if (status !== 'draft') {
+      if (status !== 'temporary') {
         client.release();
         return res.status(400).json({ ok: false, error: t('invoices.cannotDeletePosted', lang) });
       }
@@ -229,7 +229,7 @@ invoicesRouter.post('/:id/post', async (req: Request, res: Response) => {
         return res.status(404).json({ ok: false, error: t('invoices.notFound', lang) });
       }
       const inv = exist.rows[0] as any;
-      if (inv.status !== 'draft') {
+      if (inv.status !== 'temporary') {
         client.release();
         return res.status(400).json({ ok: false, error: t('invoices.cannotModifyPosted', lang) });
       }
@@ -238,13 +238,13 @@ invoicesRouter.post('/:id/post', async (req: Request, res: Response) => {
       const total = items.reduce((acc, it) => acc + Number(it.total || 0), 0);
 
       await client.query('BEGIN');
-      // Create journal (posted) with 2 lines: DR Receivable, CR Sales
+      // Create journal (permanent) with 2 lines: DR Receivable, CR Sales
       const journalId = require('crypto').randomUUID();
-      await client.query(`INSERT INTO journals (id, fiscal_year_id, ref_no, date, description, status) VALUES ($1, $2, $3, $4, $5, 'posted')`, [journalId, inv.fiscal_year_id ?? null, inv.invoice_no ?? null, inv.date, `Invoice ${inv.invoice_no || inv.id}`]);
+      await client.query(`INSERT INTO journals (id, fiscal_year_id, ref_no, date, description, status) VALUES ($1, $2, $3, $4, $5, 'permanent')`, [journalId, inv.fiscal_year_id ?? null, inv.invoice_no ?? null, inv.date, `Invoice ${inv.invoice_no || inv.id}`]);
       await client.query(`INSERT INTO journal_items (id, journal_id, account_id, party_id, debit, credit, description) VALUES ($1, $2, $3, $4, $5, $6, $7)`, [require('crypto').randomUUID(), journalId, accounts.receivable_account_id, inv.customer_id ?? null, total, 0, 'Invoice receivable']);
       await client.query(`INSERT INTO journal_items (id, journal_id, account_id, party_id, debit, credit, description) VALUES ($1, $2, $3, $4, $5, $6, $7)`, [require('crypto').randomUUID(), journalId, accounts.sales_account_id, inv.customer_id ?? null, 0, total, 'Invoice sales']);
       // Update invoice status
-      await client.query(`UPDATE invoices SET status = 'posted', total = $1 WHERE id = $2`, [total, id]);
+      await client.query(`UPDATE invoices SET status = 'permanent', total = $1 WHERE id = $2`, [total, id]);
       // Optional inventory transactions
       if (warehouse_id) {
         for (const it of items) {
@@ -254,7 +254,7 @@ invoicesRouter.post('/:id/post', async (req: Request, res: Response) => {
         }
       }
       await client.query('COMMIT');
-      return res.json({ id, status: 'posted', message: t('invoices.posted', lang) });
+      return res.json({ id, status: 'permanent', message: t('invoices.posted', lang) });
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;

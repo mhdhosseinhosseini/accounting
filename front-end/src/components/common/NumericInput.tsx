@@ -1,9 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useId } from 'react';
 import { useTranslation } from 'react-i18next';
+import { FormControl, InputLabel, OutlinedInput, FormHelperText } from '@mui/material';
 
 interface Props {
   value: number | string;
   onChange: (value: number | string) => void;
+  label?: string;
+  helperText?: string;
   placeholder?: string;
   className?: string;
   showStepper?: boolean;
@@ -35,6 +38,10 @@ interface Props {
    * The component will set its value immediately and propagate via onChange.
    */
   onQuickFill?: () => number | string | null;
+  /** Optional input ref to allow parent to programmatically focus */
+  inputRef?: React.Ref<HTMLInputElement>;
+  /** Callback when Enter (without modifiers) is pressed */
+  onEnter?: () => void;
 }
 
 /**
@@ -52,6 +59,8 @@ const NumericInput: React.FC<Props> = ({
   onChange,
   className = '',
   placeholder,
+  label,
+  helperText,
   dirOverride,
   allowDecimal = false,
   decimalScale = 0,
@@ -70,6 +79,8 @@ const NumericInput: React.FC<Props> = ({
   size = 'small',
   onCtrlEnter,
   onQuickFill,
+  inputRef,
+  onEnter,
 }) => {
   const { t, i18n } = useTranslation();
   const isRTL = i18n.dir() === 'rtl';
@@ -167,15 +178,23 @@ const NumericInput: React.FC<Props> = ({
   // Canonical ASCII value and formatted display value
   const [asciiValue, setAsciiValue] = useState<string>(String(value) || '');
   const [displayVal, setDisplayVal] = useState<string>('');
-  const inputRef = useRef<HTMLInputElement>(null);
-  const focusedRef = useRef(false);
+  const internalInputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
+   const focusedRef = useRef(false);
 
   // Padding for stepper overlay and side classes
   const padClass = showStepper ? (stepperPosition === 'left' ? 'pl-7' : 'pr-7') : '';
   const stepperSideClasses = 'rounded-md border border-gray-300 shadow-sm';
   const widthClass = fullWidth ? 'w-full' : 'w-28';
-  const sizeClasses = size === 'large' ? 'py-3 h-11' : size === 'medium' ? 'py-2 h-10' : 'py-1 h-8';
-  const stepperHeightClass = size === 'large' ? 'h-11' : size === 'medium' ? 'h-10' : 'h-8';
+  // Match MUI TextField heights: small=40px, medium=48px, large=56px
+  const sizeClasses = size === 'large'
+    ? 'h-14 min-h-[56px] py-3'
+    : size === 'medium'
+      ? 'h-12 min-h-[48px] py-2.5'
+      : 'h-10 min-h-[40px] py-2';
+  const stepperHeightClass = size === 'large' ? 'h-14' : size === 'medium' ? 'h-12' : 'h-10';
+  const alignClass = isRTL ? 'text-right' : 'text-left';
+  const muiSize = size === 'small' ? 'small' : 'medium';
 
   /**
    * clampNumber
@@ -202,7 +221,7 @@ const NumericInput: React.FC<Props> = ({
   const applyNumberUpdate = (n: number) => {
     const clamped = clampNumber(n); const ascii = formatNumToAscii(clamped);
     setAsciiValue(ascii); const formatted = formatForTyping(ascii); setDisplayVal(formatted); onChange(ascii);
-    requestAnimationFrame(() => { const el = inputRef.current; if (!el) return; const len = el.value.length; el.setSelectionRange(len, len); });
+    requestAnimationFrame(() => { const el = internalInputRef.current; if (!el) return; const len = el.value.length; el.setSelectionRange(len, len); });
   };
 
   /**
@@ -239,10 +258,18 @@ const NumericInput: React.FC<Props> = ({
   const handleFocus = () => {
     focusedRef.current = true;
     if (isFa) { try { document.documentElement.lang = 'fa'; document.documentElement.dir = 'rtl'; } catch {} }
-    const formatted = formatForTyping(asciiValue || ''); setDisplayVal(formatted);
+    const formatted = formatForTyping(asciiValue || '');
+    setDisplayVal(formatted);
     requestAnimationFrame(() => {
-      const el = inputRef.current; if (!el) return; try { el.setAttribute('lang', isFa ? 'fa' : 'en'); } catch {}
-      if (selectAllOnFocus) { el.select(); } else { const len = el.value.length; el.setSelectionRange(len, len); }
+      const el = internalInputRef.current;
+      if (!el) return;
+      try { el.setAttribute('lang', isFa ? 'fa' : 'en'); } catch {}
+      if (selectAllOnFocus) {
+        el.select();
+      } else {
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      }
     });
   };
 
@@ -254,7 +281,7 @@ const NumericInput: React.FC<Props> = ({
     const el = e.target; const caret = el.selectionStart ?? (el.value?.length || 0); const raw = el.value || '';
     const ascii = toEnglishNumeric(raw, allowDecimal, decimalScale, allowNegative); setAsciiValue(ascii); const formatted = formatForTyping(ascii); setDisplayVal(formatted); onChange(ascii);
     const leftRaw = raw.slice(0, caret); const leftClean = toEnglishNumeric(leftRaw, allowDecimal, decimalScale, allowNegative);
-    requestAnimationFrame(() => { const el2 = inputRef.current; if (!el2) return; const idx = computeCaretIndex(formatted, leftClean); el2.setSelectionRange(idx, idx); });
+    requestAnimationFrame(() => { const el2 = internalInputRef.current; if (!el2) return; const idx = computeCaretIndex(formatted, leftClean); el2.setSelectionRange(idx, idx); });
   };
 
   /**
@@ -270,15 +297,24 @@ const NumericInput: React.FC<Props> = ({
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const text = e.clipboardData.getData('text'); const ascii = toEnglishNumeric(text, allowDecimal, decimalScale, allowNegative);
     if (ascii !== text) { e.preventDefault(); setAsciiValue(ascii); const formatted = formatForTyping(ascii); setDisplayVal(formatted); onChange(ascii);
-      requestAnimationFrame(() => { const el = inputRef.current; if (!el) return; const len = el.value.length; el.setSelectionRange(len, len); }); }
+      requestAnimationFrame(() => { const el = internalInputRef.current; if (!el) return; const len = el.value.length; el.setSelectionRange(len, len); }); }
   };
 
   /**
    * handleKeyDown
    * Allows only numeric-relevant keys, supports arrow step, and enforces decimal/negative rules.
    * Also triggers quick fill when Shift+Enter is pressed, and preserves Ctrl+Enter.
+   * New: shortcuts for inserting zeros
+   *  - 'l' / 'L' / 'م' inserts "000000"
+   *  - 'i' / 'I' / 'ه' inserts "000"
    */
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Enter (no modifiers): delegate to onEnter when provided
+    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) {
+      e.preventDefault();
+      if (!disabled && onEnter) { try { onEnter(); } catch {} }
+      return;
+    }
     // Shift+Enter quick fill: set value immediately and propagate via onChange
     if (e.key === 'Enter' && e.shiftKey) {
       e.preventDefault();
@@ -297,7 +333,7 @@ const NumericInput: React.FC<Props> = ({
           setDisplayVal(formatted);
           onChange(asciiCandidate);
           requestAnimationFrame(() => {
-            const el = inputRef.current; if (!el) return; const len = el.value.length; el.setSelectionRange(len, len);
+            const el = internalInputRef.current; if (!el) return; const len = el.value.length; el.setSelectionRange(len, len);
           });
         } catch {}
       }
@@ -307,6 +343,37 @@ const NumericInput: React.FC<Props> = ({
     if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); if (!disabled && onCtrlEnter) { try { onCtrlEnter(); } catch {} } return; }
     if (e.key === 'ArrowUp') { e.preventDefault(); if (!disabled) increment(); return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); if (!disabled) decrement(); return; }
+
+    /**
+     * insertZerosAtCaret
+     * Inserts the provided zeros string at the current caret/selection in the raw input,
+     * normalizes to ASCII numeric, updates display formatting, and positions caret after insert.
+     */
+    const insertZerosAtCaret = (zeros: string) => {
+      const el = e.target as HTMLInputElement;
+      const start = el.selectionStart ?? 0;
+      const end = el.selectionEnd ?? start;
+      const rawBefore = el.value || '';
+      const rawAfter = rawBefore.slice(0, start) + zeros + rawBefore.slice(end);
+      const ascii = toEnglishNumeric(rawAfter, allowDecimal, decimalScale, allowNegative);
+      setAsciiValue(ascii);
+      const formatted = formatForTyping(ascii);
+      setDisplayVal(formatted);
+      onChange(ascii);
+      requestAnimationFrame(() => {
+        const el2 = internalInputRef.current; if (!el2) return;
+        const leftClean = toEnglishNumeric(rawAfter.slice(0, start + zeros.length), allowDecimal, decimalScale, allowNegative);
+        const idx = computeCaretIndex(formatted, leftClean);
+        el2.setSelectionRange(idx, idx);
+      });
+    };
+
+    // Shortcut keys: 'l'/'L'/'م' -> 6 zeros, 'i'/'I'/'ه' -> 3 zeros
+    if (!disabled) {
+      if (e.key === 'l' || e.key === 'L' || e.key === 'م') { e.preventDefault(); insertZerosAtCaret('000000'); return; }
+      if (e.key === 'i' || e.key === 'I' || e.key === 'ه') { e.preventDefault(); insertZerosAtCaret('000'); return; }
+    }
+
     const allowKeys = new Set(['Backspace','Delete','ArrowLeft','ArrowRight','Home','End','Tab']); if (allowKeys.has(e.key)) return;
     if (/^[0-9]$/.test(e.key) || /^[۰-۹]$/.test(e.key) || /^[٠-٩]$/.test(e.key)) return;
     if (allowNegative && e.key === '-') { const asciiCurrent = toEnglishNumeric(displayVal, allowDecimal, decimalScale, allowNegative); const cursorPos = (e.target as HTMLInputElement).selectionStart || 0; if (cursorPos === 0 && !asciiCurrent.startsWith('-')) return; }
@@ -322,24 +389,26 @@ const NumericInput: React.FC<Props> = ({
     else if (asciiForValidation) {
       const numVal = Number(asciiForValidation);
       if (Number.isFinite(numVal)) {
-        if (min != null && numVal < min) error = `Must be ≥ ${min}`;
-        if (max != null && numVal > max) error = `Must be ≤ ${max}`;
-        if (!allowDecimal && asciiForValidation.includes('.')) error = 'Decimals are not allowed';
-        if (allowDecimal && decimalScale >= 0) { const frac = asciiForValidation.split('.')[1] || ''; if (frac.length > decimalScale) error = `Max ${decimalScale} decimal places`; }
+        if (min != null && numVal < min) error = t('common.errors.min','Must be ≥ {{min}}', { min });
+        if (max != null && numVal > max) error = t('common.errors.max','Must be ≤ {{max}}', { max });
+        if (!allowDecimal && asciiForValidation.includes('.')) error = t('common.errors.noDecimal','Decimals are not allowed');
+        if (allowDecimal && decimalScale >= 0) { const frac = asciiForValidation.split('.')[1] || ''; if (frac.length > decimalScale) error = t('common.errors.decimalPlaces','Max {{count}} decimal places', { count: decimalScale }); }
       }
     }
   }
   const invalid = !!error;
 
   return (
-    <div className="inline-flex flex-col">
-      <div className="relative inline-block">
-        <input
-          ref={inputRef}
-          type="text"
-          dir={dirOverride || (isRTL ? 'rtl' : 'ltr')}
-          lang={isFa ? 'fa' : 'en'}
-          className={`${widthClass} border rounded px-2 ${invalid ? 'border-red-500 focus:ring-red-300' : ''} ${padClass} ${sizeClasses} ${className}`}
+    <FormControl variant="outlined" size={muiSize} fullWidth={fullWidth} error={invalid} disabled={disabled} required={required}>
+      {label && (
+        <InputLabel htmlFor={inputId} shrink={focusedRef.current || !!displayVal}>{label}</InputLabel>
+      )}
+      <div className="relative">
+        <OutlinedInput
+          id={inputId}
+          inputRef={(el) => { internalInputRef.current = el; if (typeof inputRef === 'function') { (inputRef as (el: HTMLInputElement | null) => void)(el); } else if (inputRef && typeof (inputRef as any) === 'object') { try { (inputRef as any).current = el; } catch {} } }}
+          size={muiSize}
+          disabled={disabled}
           value={displayVal}
           onFocus={handleFocus}
           onChange={handleChange}
@@ -347,7 +416,20 @@ const NumericInput: React.FC<Props> = ({
           onPaste={handlePaste}
           onBlur={handleBlur}
           placeholder={placeholder}
-          disabled={disabled}
+          label={label}
+          inputProps={{
+            dir: dirOverride || (isRTL ? 'rtl' : 'ltr'),
+            lang: isFa ? 'fa' : 'en',
+            style: { textAlign: isRTL ? 'right' : 'left' },
+          }}
+          sx={{
+            minHeight: size === 'large' ? 56 : (muiSize === 'small' ? 40 : 48),
+            height: size === 'large' ? 56 : (muiSize === 'small' ? 40 : 48),
+            '& .MuiInputBase-input': { padding: muiSize === 'small' ? '8px 12px' : '12px 14px' },
+            '& .MuiOutlinedInput-notchedOutline': { borderColor: '#d1d5db' },
+            '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#cbd5e1' },
+            '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#9ca3af' },
+          }}
           aria-invalid={invalid || undefined}
         />
         {showStepper && (
@@ -357,11 +439,12 @@ const NumericInput: React.FC<Props> = ({
           </div>
         )}
       </div>
-      {showValidation && error && (
-        <span className="mt-1 text-[11px] text-red-500">{isFa ? toPersianDigits(error) : error}</span>
-      )}
-    </div>
+      {(showValidation && error) || !!helperText ? (
+        <FormHelperText>{error ? (isFa ? toPersianDigits(error) : error) : helperText}</FormHelperText>
+      ) : null}
+    </FormControl>
   );
+
 };
 
 export default NumericInput;

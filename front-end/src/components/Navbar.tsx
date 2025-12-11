@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, LogOut, Languages, ListTree, NotebookPen, FileText, Users as UsersGroup, Boxes, BarChart3, CalendarDays } from 'lucide-react';
+import { User, LogOut, Languages, ListTree, NotebookPen, FileText, Users as UsersGroup, Boxes, BarChart3, CalendarDays, Wallet } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { t, applyDir, i18n } from '../i18n';
@@ -19,6 +19,32 @@ const Navbar: React.FC = () => {
   const [currentLanguage, setCurrentLanguage] = useState<'fa' | 'en'>(
     (i18n.language as 'fa' | 'en') || 'fa'
   );
+  const [isTreasuryOpen, setIsTreasuryOpen] = useState(false);
+   const treasuryRef = useRef<HTMLDivElement>(null);
+
+   /**
+    * Close Treasury dropdown on outside click or Escape.
+    * This prevents flicker and inconsistent close behavior.
+    */
+   useEffect(() => {
+     function onDocClick(e: MouseEvent | TouchEvent) {
+       if (!treasuryRef.current) return;
+       if (isTreasuryOpen && !treasuryRef.current.contains(e.target as Node)) {
+         setIsTreasuryOpen(false);
+       }
+     }
+     function onKey(e: KeyboardEvent) {
+       if (e.key === 'Escape') setIsTreasuryOpen(false);
+     }
+     document.addEventListener('mousedown', onDocClick);
+     document.addEventListener('touchstart', onDocClick);
+     document.addEventListener('keydown', onKey);
+     return () => {
+       document.removeEventListener('mousedown', onDocClick);
+       document.removeEventListener('touchstart', onDocClick);
+       document.removeEventListener('keydown', onKey);
+     };
+   }, [isTreasuryOpen]);
 
   useEffect(() => {
     // Keep Accept-Language and document direction in sync with selected language
@@ -57,8 +83,8 @@ const Navbar: React.FC = () => {
     { to: '/journals', labelKey: 'navigation.journals', fallback: 'Journals', Icon: NotebookPen },
     { to: '/documents', labelKey: 'navigation.documents', fallback: 'Documents', Icon: FileText },
     { to: '/invoices', labelKey: 'navigation.invoices', fallback: 'Invoices', Icon: FileText },
-    { to: '/parties', labelKey: 'navigation.parties', fallback: 'Parties', Icon: UsersGroup },
     { to: '/warehouses', labelKey: 'navigation.warehouses', fallback: 'Warehouses', Icon: Boxes },
+
     { to: '/fiscal-years', labelKey: 'navigation.fiscalYears', fallback: 'Fiscal Years', Icon: CalendarDays },
   ];
 
@@ -95,6 +121,68 @@ const Navbar: React.FC = () => {
                  {t(item.labelKey, item.fallback)}
                </Link>
             ))}
+            {/* Treasury dropdown trigger */}
+            <div
+              className="relative"
+              ref={treasuryRef}
+            >
+              <button
+                onClick={() => setIsTreasuryOpen((v) => !v)}
+                className="text-white hover:text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium transition-colors duration-200 flex items-center bg-transparent"
+                aria-label={t('navigation.treasury', 'Treasury')}
+                title={t('navigation.treasury', 'Treasury')}
+              >
+                <Wallet className="h-5 w-5 mr-2 rtl:ml-2 rtl:mr-0" />
+                {t('navigation.treasury', 'Treasury')}
+              </button>
+              {isTreasuryOpen && (
+                <div className="absolute left-0 top-full mt-1 min-w-[200px] bg-[rgb(4,131,63)] shadow-md rounded-md py-2 z-50">
+                   <Link
+                     to="/treasury/cashboxes"
+                     className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2"
+                     onClick={() => setIsTreasuryOpen(false)}
+                   >
+                     {t('navigation.treasuryCashboxes', 'Cashboxes')}
+                   </Link>
+                   {/* Consolidated Manage Banks: removed standalone Banks link */}
+                   <Link
+                      to="/treasury/bank-accounts"
+                      className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2"
+                      onClick={() => setIsTreasuryOpen(false)}
+                    >
+                      {t('navigation.treasuryManageBanks', 'Manage Banks')}
+                    </Link>
+                    <Link
+                      to="/treasury/checks"
+                      className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2"
+                      onClick={() => setIsTreasuryOpen(false)}
+                    >
+                      {t('navigation.treasuryChecks', 'Manage Check')}
+                    </Link>
+                   <Link
+                     to="/treasury/receipts"
+                     className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2"
+                     onClick={() => setIsTreasuryOpen(false)}
+                   >
+                     {t('navigation.treasuryReceipts', 'Receipts')}
+                   </Link>
+                   <Link
+                     to="/treasury/payments"
+                     className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2"
+                     onClick={() => setIsTreasuryOpen(false)}
+                   >
+                     {t('navigation.treasuryPayments', 'Payments')}
+                   </Link>
+                   <Link
+                     to="/treasury/settings"
+                     className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2"
+                     onClick={() => setIsTreasuryOpen(false)}
+                   >
+                     {t('navigation.treasurySettings', 'Settings')}
+                   </Link>
+                 </div>
+              )}
+            </div>
           </div>
 
           {/* Right: language toggle + profile/logout or login */}
@@ -195,6 +283,36 @@ const Navbar: React.FC = () => {
               </Link>
             ))}
 
+            {/* Treasury mobile submenu */}
+            <Link 
+              to="/treasury/cashboxes"
+              className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium transition-colors duration-200 bg-transparent leading-6 text-sm h-10 border-0 outline-none" 
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              {t('navigation.treasuryCashboxes', 'Cashboxes')}
+            </Link>
+            <Link 
+              to="/treasury/bank-accounts"
+              className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium transition-colors duration-200 bg-transparent leading-6 text-sm h-10 border-0 outline-none" 
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              {t('navigation.treasuryManageBanks', 'Manage Banks')}
+            </Link>
+            <Link 
+              to="/treasury/receipts"
+              className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium transition-colors duration-200 bg-transparent leading-6 text-sm h-10 border-0 outline-none" 
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              {t('navigation.treasuryReceipts', 'Receipts')}
+            </Link>
+            <Link 
+              to="/treasury/payments"
+              className="block text-white hover:bg-green-700 hover:bg-opacity-50 px-3 py-2 rounded-md font-medium transition-colors duration-200 bg-transparent leading-6 text-sm h-10 border-0 outline-none" 
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              {t('navigation.treasuryPayments', 'Payments')}
+            </Link>
+
             {isAuthenticated ? (
               <>
                 <Link 
@@ -229,5 +347,13 @@ const Navbar: React.FC = () => {
     </nav>
   );
 };
+
+/**
+ * TreasuryDropdown component is defined inline so it can leverage
+ * local i18n and routing. Declared after Navbar and hoisted.
+ */
+function TreasuryDropdown() {
+  return null; // Not used since we embedded the dropdown directly in JSX above.
+}
 
 export default Navbar;

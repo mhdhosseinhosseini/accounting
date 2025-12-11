@@ -4,16 +4,16 @@
  * - Auto document number with uniqueness check in fiscal year
  * - Daily count computed for the selected date
  * - Default header values (type, status, provider) when coming from New
- * - Read-only reference number on New
+ * - Editable reference number and type in header
  * - Dynamic lines table with auto-open next row
- * - Totals and difference; Save enabled only when balanced
+ * - Totals and difference; Save allowed even when unbalanced (saves as draft)
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
 import { useTranslation } from 'react-i18next';
 import { getCurrentLang } from '../i18n';
-import JalaliDatePicker from '../components/JalaliDatePicker';
+import JalaliDatePicker from '../components/common/JalaliDatePicker';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import config from '../config';
 import DateObject from 'react-date-object';
@@ -24,6 +24,8 @@ import NumericInput from '../components/common/NumericInput';
 import { Button } from '../components/Button';
 import SearchableSelect, { SelectableOption } from '../components/common/SearchableSelect';
 import gregorian from 'react-date-object/calendars/gregorian';
+import ConfirmDialog from '../components/common/ConfirmDialog';
+import AlertDialog from '../components/common/AlertDialog';
 
 interface FiscalYearRef { id: number; name: string; start_date: string; end_date: string; is_closed?: boolean; }
 
@@ -40,7 +42,7 @@ interface DocumentLine {
  * CodeOption/DetailOption
  * Extend SelectableOption with code and title fields for our selectors.
  */
-interface CodeOption extends SelectableOption { code: string; title: string; }
+interface CodeOption extends SelectableOption { code: string; title: string; nature?: number | null; can_have_details?: boolean; }
 interface DetailOption extends SelectableOption { code: string; title: string; }
 interface DocumentFormState {
   fyId: string | null;
@@ -180,6 +182,65 @@ const DocumentFormPage: React.FC = () => {
   const [detailOptions, setDetailOptions] = useState<DetailOption[]>([]);
   const [editItemsRaw, setEditItemsRaw] = useState<any[]>([]);
 
+  // Dialog state: confirm dialog for unbalanced save and alert dialog for messages
+  const [confirmUnbalancedOpen, setConfirmUnbalancedOpen] = useState(false);
+  const [confirmNatureMismatchOpen, setConfirmNatureMismatchOpen] = useState(false);
+  const [natureMismatchMessage, setNatureMismatchMessage] = useState<string>('');
+  const [alertState, setAlertState] = useState<{ open: boolean; title?: string; message: string }>({
+    open: false,
+    title: undefined,
+    message: '',
+  });
+
+  /**
+   * Row input refs and pending focus target
+   * Keeps references to each row's detail input and description input, so we can
+   * programmatically focus the next field after selecting a specific code.
+   */
+  const codeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const detailInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const descriptionRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const debitInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const creditInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const [pendingFocus, setPendingFocus] = useState<{ row: number; target: 'code' | 'detail' | 'description' } | null>(null);
+  
+  /**
+   * Focus effect
+   * When a pending focus target is set (after code selection), focus the detail
+   * input if detail options exist for the selected code; otherwise focus the description.
+   */
+  useEffect(() => {
+    if (!pendingFocus) return;
+    const i = pendingFocus.row;
+    if (pendingFocus.target === 'code') {
+      const el = codeInputRefs.current[i];
+      if (el) { el.focus(); }
+      else { descriptionRefs.current[i]?.focus(); }
+    } else if (pendingFocus.target === 'detail') {
+      const el = detailInputRefs.current[i];
+      if (el) { el.focus(); } else { descriptionRefs.current[i]?.focus(); }
+    } else {
+      descriptionRefs.current[i]?.focus();
+    }
+    setPendingFocus(null);
+  }, [pendingFocus, form.lines]);
+
+  /**
+   * showAlert
+   * Opens the AlertDialog with provided message and optional title.
+   */
+  function showAlert(message: string, title?: string): void {
+    setAlertState({ open: true, title, message });
+  }
+
+  /**
+   * closeAlert
+   * Closes the AlertDialog.
+   */
+  function closeAlert(): void {
+    setAlertState((prev) => ({ ...prev, open: false }));
+  }
+
   // Detail-level tree and links: detail id -> array of linked leaf level ids
   const [detailLevelTree, setDetailLevelTree] = useState<DetailLevelNode[]>([]);
   const [detailLevelLinksByDetailId, setDetailLevelLinksByDetailId] = useState<Record<string, string[]>>({});
@@ -197,9 +258,9 @@ const DocumentFormPage: React.FC = () => {
         const res = await axios.get(`${config.API_ENDPOINTS.base}/v1/journals/${editId}`, { headers: { 'Accept-Language': getCurrentLang() } });
         const item = res.data?.item || res.data;
         if (!item) return;
-        const statusLabel = String(item.status) === 'posted'
-          ? t('status.posted', isRTL ? 'ثبت‌شده' : 'Posted')
-          : t('status.draft', isRTL ? 'موقت' : 'Draft');
+        const statusLabel = String(item.status) === 'permanent'
+          ? t('pages.documentForm.status.permanent', isRTL ? 'دائمی' : 'Permanent')
+          : t('pages.documentForm.status.temporary', isRTL ? 'موقت' : 'Temporary');
         setEditItemsRaw(Array.isArray(item.items) ? item.items : []);
         setForm((prev) => ({
           ...prev,
@@ -208,6 +269,8 @@ const DocumentFormPage: React.FC = () => {
           description: String(item.description || prev.description || ''),
           refNo: String(item.ref_no || ''),
           code: String(item.code || ''),
+          type: String(item.type || prev.type || ''),
+          provider: String(item.provider || prev.provider || ''),
           statusLabel,
           serialNo: String(item.serial_no || ''),
         }));
@@ -253,7 +316,7 @@ const DocumentFormPage: React.FC = () => {
       const normalize = (s: string) => toAsciiDigits(String(s));
       const isNum = (s: string) => /^\d+$/.test(s);
       const specific = list.filter((it: any) => it?.kind === 'specific');
-      const mapped: CodeOption[] = specific.map((it: any) => ({ id: String(it.id), name: `${it.code} — ${it.title}`, code: String(it.code), title: String(it.title || '') }));
+      const mapped: CodeOption[] = specific.map((it: any) => ({ id: String(it.id), name: `${it.code} — ${it.title}`, code: String(it.code), title: String(it.title || ''), nature: (typeof it.nature === 'number') ? it.nature : null, can_have_details: (it.can_have_details === undefined || it.can_have_details === null) ? true : !!it.can_have_details }));
       const sorted = mapped.sort((a, b) => {
         const as = normalize(a.code);
         const bs = normalize(b.code);
@@ -329,6 +392,18 @@ const DocumentFormPage: React.FC = () => {
   }
 
   /**
+   * canSelectDetailForCode
+   * Returns true if details are allowed for the given specific code.
+   * Defaults to true when the flag is missing, ensuring backward compatibility.
+   */
+  function canSelectDetailForCode(specificCodeStr: string): boolean {
+    if (!specificCodeStr) return false;
+    const spec = codeOptions.find((o) => String(o.code) === String(specificCodeStr));
+    const flag = spec?.can_have_details;
+    return flag === undefined || flag === null ? true : !!flag;
+  }
+
+  /**
    * flattenLevels
    * Flattens the detail level tree into an array for easy searching.
    */
@@ -353,6 +428,7 @@ const DocumentFormPage: React.FC = () => {
    */
   function getLeafLevelIdsForSpecificCode(specificCodeStr: string): string[] {
     if (!specificCodeStr) return [];
+    if (!canSelectDetailForCode(specificCodeStr)) return [];
     const spec = codeOptions.find((o) => String(o.code) === String(specificCodeStr));
     const specId = spec ? String(spec.id) : '';
     if (!specId) return [];
@@ -380,15 +456,9 @@ const DocumentFormPage: React.FC = () => {
   useEffect(() => {
     fetchCodeOptions();
     fetchDetailOptions();
-    fetchDetailLevelsTree();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRTL]);
 
-  // Load detail-level links once details are available
-  useEffect(() => {
-    if (detailOptions.length === 0) return;
-    fetchDetailLevelLinksForDetails(detailOptions);
-  }, [detailOptions]);
 
   /**
    * fetchFiscalYears
@@ -465,6 +535,23 @@ const DocumentFormPage: React.FC = () => {
   }
 
   /**
+   * handleRefNoChange
+   * Normalizes and updates reference number in form state.
+   */
+  function handleRefNoChange(e: React.ChangeEvent<HTMLInputElement>): void {
+    const normalized = normalizeCodeInput(e.target.value);
+    setForm((prev) => ({ ...prev, refNo: normalized }));
+  }
+
+  /**
+   * handleTypeChange
+   * Updates document type label in form state.
+   */
+  function handleTypeChange(e: React.ChangeEvent<HTMLInputElement>): void {
+    setForm((prev) => ({ ...prev, type: e.target.value }));
+  }
+
+  /**
    * updateLine
    * Updates a line field and auto-opens next row when last row becomes complete.
    * Also clears invalid detail selection when the specific code changes using detail-level constraints.
@@ -475,11 +562,9 @@ const DocumentFormPage: React.FC = () => {
       const current = lines[index];
       const nextLine = { ...current, ...patch } as DocumentLine;
 
-      // If specific code changed, enforce detail-level link constraint on detailCode
+      // If specific code changed, only enforce can_have_details toggle
       if (Object.prototype.hasOwnProperty.call(patch, 'code')) {
-        const filtered = filterDetailsForSpecificCode(nextLine.code, detailOptions);
-        const stillValid = filtered.some((opt) => String(opt.code) === String(nextLine.detailCode));
-        if (!stillValid) {
+        if (!canSelectDetailForCode(nextLine.code)) {
           nextLine.detailCode = '';
         }
       }
@@ -492,6 +577,17 @@ const DocumentFormPage: React.FC = () => {
       }
       return { ...prev, lines };
     });
+  }
+
+  /**
+   * copyHeaderDescriptionToRow
+   * Copies the top header description into the specified row's description.
+   * If the header description is blank, it leaves the row unchanged.
+   */
+  function copyHeaderDescriptionToRow(index: number): void {
+    const header = String(form.description || '').trim();
+    if (!header) return;
+    updateLine(index, { description: header });
   }
 
   /**
@@ -523,28 +619,15 @@ const DocumentFormPage: React.FC = () => {
   function handleCancel(): void { navigate('/documents'); }
 
   /**
-   * handleSave
-   * Validates, maps to journals schema, and posts to backend.
-   * Uses ISO YYYY-MM-DD directly from JalaliDatePicker; converts Jalali only if needed.
-   * - On edit: sends header fields and, if present, the mapped `items` to PATCH /v1/journals/:id
-   * - Detail selection is optional; only the specific code is required when creating.
+   * attemptSave
+   * Maps current form lines and posts or patches the journal.
+   * Shows AlertDialog on errors; navigates back on success.
    */
-  async function handleSave(): Promise<void> {
-    if (!form.fyId || !form.date) { alert(t('validation.dateRequired', 'Please choose a date')); return; }
-    if (totals.debit !== totals.credit) { alert(t('validation.balancedRequired', 'Debit and credit must be equal to save')); return; }
-
-    // Validate required selections for each line with amount
-    const linesWithAmounts = form.lines.filter((ln) => Number(ln.debit) > 0 || Number(ln.credit) > 0);
-    if (!isEdit) {
-      for (const ln of linesWithAmounts) {
-        if (!ln.code) { alert(t('validation.codeRequired', 'Please select a code')); return; }
-        // Detail is optional; do not block saving
-      }
-    }
-
+  async function attemptSave(forceDraft?: boolean): Promise<void> {
     // Reference number is not used on create; do not auto-number
 
     // Map line selections to journals items using IDs
+    const linesWithAmounts = form.lines.filter((ln) => Number(ln.debit) > 0 || Number(ln.credit) > 0);
     const isoDate = /^\d{4}-\d{2}-\d{2}$/.test(form.date) ? form.date : (jalaliToIso(form.date) || form.date);
     const items = linesWithAmounts
       .map((ln) => {
@@ -558,7 +641,6 @@ const DocumentFormPage: React.FC = () => {
           description: ln.description || undefined,
         };
       })
-      // Include items even when detail_id is not selected; require only code_id
       .filter((it) => !!it.code_id);
 
     if (isEdit && editId) {
@@ -568,24 +650,28 @@ const DocumentFormPage: React.FC = () => {
           date: isoDate,
           code: form.code || undefined,
           description: form.description || undefined,
+          type: form.type || undefined,
         };
         if (items.length > 0) patchPayload.items = items;
+        if (forceDraft) patchPayload.force_draft = true;
         await axios.patch(`${config.API_ENDPOINTS.base}/v1/journals/${editId}`, patchPayload, { headers: { 'Accept-Language': getCurrentLang() } });
         navigate('/documents');
         return;
       } catch (e: any) {
-        alert(t('error.generic', 'Failed to save. Please try again.'));
+        showAlert(t('error.generic', 'Failed to save. Please try again.'));
         return;
       }
     }
 
-    const payload = {
+    const payload: any = {
       fiscal_year_id: form.fyId,
       date: isoDate,
       code: form.code || undefined,
       description: form.description || undefined,
+      type: form.type || undefined,
       items,
     };
+    if (forceDraft) payload.force_draft = true;
 
     try {
       await axios.post(`${config.API_ENDPOINTS.base}/v1/journals`, payload, { headers: { 'Accept-Language': getCurrentLang() } });
@@ -593,11 +679,88 @@ const DocumentFormPage: React.FC = () => {
     } catch (e: any) {
       const status = e?.response?.status;
       if (status === 409) {
-        alert(t('journals.duplicateRefNo', 'Duplicate reference number'));
+        showAlert(t('journals.duplicateRefNo', 'Duplicate reference number'));
       } else {
-        alert(t('error.generic', 'Failed to save. Please try again.'));
+        showAlert(t('error.generic', 'Failed to save. Please try again.'));
       }
     }
+  }
+
+  /**
+   * findNatureMismatches
+   * Returns lines where the selected specific code has a required side
+   * ('Debitor' => debit-only, 'Creditor' => credit-only) but the amount
+   * was entered on the wrong side.
+   */
+  function findNatureMismatches(lines: DocumentLine[], codes: CodeOption[]): Array<{ row: number; code: string; nature: number; wrongSide: 'debit' | 'credit' }> {
+    const out: Array<{ row: number; code: string; nature: number; wrongSide: 'debit' | 'credit' }> = [];
+    for (const ln of lines) {
+      const codeOpt = codes.find((o) => String(o.code) === String(ln.code));
+      if (!codeOpt || typeof codeOpt.nature !== 'number') continue; // no constraint
+      const nature = Number(codeOpt.nature); // 0 = Debitor, 1 = Creditor
+      const debitAmt = Number(ln.debit) || 0;
+      const creditAmt = Number(ln.credit) || 0;
+      if (nature === 0 && creditAmt > 0) {
+        out.push({ row: ln.row, code: String(ln.code), nature, wrongSide: 'credit' });
+      } else if (nature === 1 && debitAmt > 0) {
+        out.push({ row: ln.row, code: String(ln.code), nature, wrongSide: 'debit' });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * handleConfirmUnbalancedSave
+   * Closes the confirm dialog and proceeds with saving.
+   */
+  function handleConfirmUnbalancedSave(): void {
+    setConfirmUnbalancedOpen(false);
+    // Proceed with the actual save using current form state
+    void attemptSave();
+  }
+
+  /**
+   * handleConfirmNatureMismatchSave
+   * Closes the confirm dialog and proceeds with saving as draft.
+   */
+  function handleConfirmNatureMismatchSave(): void {
+    setConfirmNatureMismatchOpen(false);
+    void attemptSave(true);
+  }
+
+  /**
+   * handleSave
+   * Validates, then opens confirm for unbalanced saves, otherwise saves immediately.
+   */
+  async function handleSave(): Promise<void> {
+    if (!form.fyId || !form.date) { showAlert(t('validation.dateRequired', 'Please choose a date')); return; }
+
+    // Validate required selections for each line with amount
+    const linesWithAmounts = form.lines.filter((ln) => Number(ln.debit) > 0 || Number(ln.credit) > 0);
+    if (!isEdit) {
+      for (const ln of linesWithAmounts) {
+        if (!ln.code) { showAlert(t('validation.codeRequired', 'Please select a code')); return; }
+        // Detail is optional; do not block saving
+      }
+    }
+
+    // Enforce code nature side: offer draft save when violated
+    const natureViolations = findNatureMismatches(linesWithAmounts, codeOptions);
+    if (natureViolations.length > 0) {
+      const msg = t('pages.documentForm.confirmNatureMismatchDraft', 'Some codes violate debit/credit side. Save as draft?');
+      setNatureMismatchMessage(msg);
+      setConfirmNatureMismatchOpen(true);
+      return;
+    }
+
+    // Unbalanced Save Confirmation: open modal instead of using window.confirm
+    const isUnbalanced = totals.debit !== totals.credit;
+    if (isUnbalanced) {
+      setConfirmUnbalancedOpen(true);
+      return;
+    }
+
+    await attemptSave();
   }
 
   // Initial load of fiscal years
@@ -633,7 +796,7 @@ const DocumentFormPage: React.FC = () => {
               <div>
                 <JalaliDatePicker
                   value={form.date}
-                  onChange={(v) => handleChange('date', v)}
+                  onChange={(v: string) => handleChange('date', v)}
                   placeholder={t('fields.date', 'Date')}
                   inputClassName="w-full px-3 py-2 rounded border border-gray-300 focus:border-blue-500"
                 />
@@ -651,7 +814,23 @@ const DocumentFormPage: React.FC = () => {
 
             {/* Disabled fields two-column layout */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Serial number: read-only, positioned first; left column in Farsi */}
+              {/* Reference number: editable */}
+              <TextField
+                label={t('fields.refNo', 'Reference Number')}
+                variant="outlined"
+                fullWidth
+                value={formatCodeForDisplay(form.refNo)}
+                onChange={handleRefNoChange}
+              />
+              {/* Type: editable */}
+              <TextField
+                label={t('fields.type', 'Type')}
+                variant="outlined"
+                fullWidth
+                value={form.type}
+                onChange={handleTypeChange}
+              />
+              {/* Serial number: read-only */}
               <TextField
                 label={t('fields.serialNo', 'Serial Number')}
                 variant="outlined"
@@ -660,39 +839,23 @@ const DocumentFormPage: React.FC = () => {
                 disabled
                 InputProps={{ readOnly: true }}
               />
-              {/* Removed daily count and reference number per spec */}
-
-              {/* Type next to status */}
-              <TextField
-                label={t('fields.type', 'Type')}
-                variant="outlined"
-                fullWidth
-                value={form.type}
-                disabled
-              />
+              {/* Status: read-only */}
               <TextField
                 label={t('fields.status', 'Status')}
                 variant="outlined"
                 fullWidth
                 value={form.statusLabel}
                 disabled
+                InputProps={{ readOnly: true }}
               />
-
-              {/* Reference number placed before provider in disabled columns */}
-              <TextField
-                label={t('fields.refNo', 'Reference Number')}
-                variant="outlined"
-                fullWidth
-                value={formatCodeForDisplay(form.refNo)}
-                disabled
-              />
-              {/* Removed fiscal year from header UI per spec */}
+              {/* Provider: read-only */}
               <TextField
                 label={t('fields.provider', 'Provider')}
                 variant="outlined"
                 fullWidth
                 value={form.provider}
                 disabled
+                InputProps={{ readOnly: true }}
               />
             </div>
 
@@ -724,7 +887,8 @@ const DocumentFormPage: React.FC = () => {
               </thead>
               <tbody>
                 {form.lines.map((ln, idx) => {
-                  const rowDetails = filterDetailsForSpecificCode(ln.code, detailOptions);
+                  const detailEnabled = !!ln.code && canSelectDetailForCode(ln.code);
+                  const rowDetails = detailEnabled ? detailOptions : [];
                   return (
                     <tr key={idx} className="border-b border-gray-200">
                       <td className="py-2 px-2">{getCurrentLang() === 'fa' ? toPersianDigits(String(ln.row)) : ln.row}</td>
@@ -732,28 +896,37 @@ const DocumentFormPage: React.FC = () => {
                         <SearchableSelect
                           options={codeOptions}
                           value={codeOptions.find((o) => String(o.code) === String(ln.code)) || null}
-                          onChange={(opt) => updateLine(idx, { code: opt ? String(opt.code) : '' })}
+                          onChange={(opt) => {
+                            updateLine(idx, { code: opt ? String(opt.code) : '' });
+                            const detailEnabled = opt ? canSelectDetailForCode(String(opt.code)) : false;
+                            setPendingFocus({ row: idx, target: detailEnabled ? 'detail' : 'description' });
+                          }}
                           label={t('fields.code', 'Code')}
                           placeholder={t('pages.codes.codeOrTitle', 'Search code or title')}
                           size="small"
                           fullWidth
                           getOptionLabel={(opt) => opt.name}
                           isOptionEqualToValue={(o, v) => String(o.code) === String(v.code)}
+                          inputRef={(el) => { codeInputRefs.current[idx] = el; }}
                         />
                       </td>
                       <td className="py-2 px-2">
-                        <SearchableSelect
-                          options={rowDetails}
-                          value={rowDetails.find((o) => String(o.code) === String(ln.detailCode)) || null}
-                          onChange={(opt) => updateLine(idx, { detailCode: opt ? String(opt.code) : '' })}
-                          label={t('fields.detailCode', 'Detail Code')}
-                          placeholder={t('pages.codes.codeOrTitle', 'Search code or title')}
-                          size="small"
-                          fullWidth
-                          disabled={!ln.code}
-                          getOptionLabel={(opt) => opt.name}
-                          isOptionEqualToValue={(o, v) => String(o.code) === String(v.code)}
-                        />
+                         <SearchableSelect
+                           options={rowDetails}
+                           value={rowDetails.find((o) => String(o.code) === String(ln.detailCode)) || null}
+                           onChange={(opt) => {
+                             updateLine(idx, { detailCode: opt ? String(opt.code) : '' });
+                             setPendingFocus({ row: idx, target: 'description' });
+                           }}
+                           label={t('fields.detailCode', 'Detail Code')}
+                           placeholder={detailEnabled ? t('pages.codes.codeOrTitle', 'Search code or title') : t('pages.documentForm.detailsDisabled', 'Details disabled for selected code')}
+                           size="small"
+                           fullWidth
+                           disabled={!detailEnabled}
+                           getOptionLabel={(opt) => opt.name}
+                           isOptionEqualToValue={(o, v) => String(o.code) === String(v.code)}
+                           inputRef={(el) => { detailInputRefs.current[idx] = el; }}
+                         />
                       </td>
                       <td className="py-2 px-2">
                         <TextField
@@ -763,6 +936,17 @@ const DocumentFormPage: React.FC = () => {
                           fullWidth
                           value={ln.description}
                           onChange={(e) => updateLine(idx, { description: e.target.value })}
+                          inputRef={(el) => { descriptionRefs.current[idx] = el; }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && e.shiftKey) {
+                              e.preventDefault();
+                              copyHeaderDescriptionToRow(idx);
+                              debitInputRefs.current[idx]?.focus();
+                            } else if (e.key === 'Enter') {
+                              e.preventDefault();
+                              debitInputRefs.current[idx]?.focus();
+                            }
+                          }}
                         />
                       </td>
                       <td className="py-2 px-2">
@@ -776,6 +960,17 @@ const DocumentFormPage: React.FC = () => {
                           allowDecimal={false}
                           allowNegative={false}
                           showValidation={false}
+                          inputRef={(el) => { debitInputRefs.current[idx] = el; }}
+                          onEnter={() => {
+                            const current = form.lines[idx];
+                            const debitEmpty = !current.debit || Number(current.debit) <= 0;
+                            if (debitEmpty) {
+                              creditInputRefs.current[idx]?.focus();
+                            } else {
+                              setPendingFocus({ row: idx + 1, target: 'code' });
+                              codeInputRefs.current[idx + 1]?.focus();
+                            }
+                          }}
                         />
                       </td>
                       <td className="py-2 px-2">
@@ -789,6 +984,11 @@ const DocumentFormPage: React.FC = () => {
                           allowDecimal={false}
                           allowNegative={false}
                           showValidation={false}
+                          inputRef={(el) => { creditInputRefs.current[idx] = el; }}
+                          onEnter={() => {
+                            setPendingFocus({ row: idx + 1, target: 'code' });
+                            codeInputRefs.current[idx + 1]?.focus();
+                          }}
                         />
                       </td>
                       <td className="py-2 px-2">
@@ -826,12 +1026,41 @@ const DocumentFormPage: React.FC = () => {
               variant="primary"
               size="medium"
               onClick={handleSave}
-              disabled={totals.debit !== totals.credit || !form.date || !form.fyId}
+              disabled={!form.date || !form.fyId}
             >
               {t('actions.save', 'Save')}
             </Button>
           </div>
         </div>
+
+        {/* ConfirmDialog for unbalanced save */}
+        <ConfirmDialog
+          open={confirmUnbalancedOpen}
+          title={t('pages.documentForm.title', 'Document Form')}
+          message={t('pages.documentForm.confirmUnbalancedSave', 'This document is unbalanced and will be saved as a draft. Continue?')}
+          type="warning"
+          onConfirm={handleConfirmUnbalancedSave}
+          onCancel={() => setConfirmUnbalancedOpen(false)}
+        />
+
+        {/* ConfirmDialog for nature mismatch save-as-draft */}
+        <ConfirmDialog
+          open={confirmNatureMismatchOpen}
+          title={t('pages.documentForm.title', 'Document Form')}
+          message={natureMismatchMessage}
+          type="warning"
+          onConfirm={handleConfirmNatureMismatchSave}
+          onCancel={() => setConfirmNatureMismatchOpen(false)}
+        />
+
+        {/* AlertDialog for validation and error messages */}
+        <AlertDialog
+          open={alertState.open}
+          title={alertState.title}
+          message={alertState.message}
+          onClose={closeAlert}
+          dimBackground={true}
+        />
       </main>
     </div>
   );
@@ -879,3 +1108,13 @@ function formatCodeForDisplay(code?: string): string {
 function normalizeCodeInput(input?: string): string {
   return toAsciiDigits(String(input || ''));
 }
+
+
+
+
+
+/**
+ * Focus effect
+ * When a pending focus target is set (after code selection), focus the detail
+ * input if detail options exist for the selected code; otherwise focus the description.
+ */

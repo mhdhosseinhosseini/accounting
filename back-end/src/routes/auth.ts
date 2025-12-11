@@ -68,6 +68,7 @@ function parseExpires(value: string): number {
 /**
  * Issue tokens and persist refresh token using direct SQL (Postgres via driver).
  * Ensures schema, upserts user by mobile, stores refresh token with expiry.
+ * In development, when `DISABLE_REFRESH_PERSISTENCE=true`, skips DB writes but still returns tokens.
  */
 async function issueTokensForMobile(mobileNumber: string) {
   await ensureSchema();
@@ -77,9 +78,16 @@ async function issueTokensForMobile(mobileNumber: string) {
   const accessToken = jwt.sign(payload, jwtSecret, { expiresIn: parseExpires(accessExpiresIn) });
   const refreshToken = jwt.sign({ sub: mobileNumber, type: 'refresh' }, jwtSecret, { expiresIn: parseExpires(refreshExpiresIn) });
 
-  const decoded: any = jwt.decode(refreshToken);
-  const expMs = decoded?.exp ? decoded.exp * 1000 : Date.now() + 7 * 24 * 60 * 60 * 1000;
-  await storeRefreshToken(refreshToken, user.id, expMs);
+  const disablePersist = String(process.env.DISABLE_REFRESH_PERSISTENCE || '').toLowerCase() === 'true';
+  if (!disablePersist) {
+    try {
+      const decoded: any = jwt.decode(refreshToken);
+      const expMs = decoded?.exp ? decoded.exp * 1000 : Date.now() + 7 * 24 * 60 * 60 * 1000;
+      await storeRefreshToken(refreshToken, user.id, expMs);
+    } catch {
+      // Gracefully ignore persistence failure in development to avoid blocking login
+    }
+  }
 
   return { accessToken, refreshToken };
 }
@@ -215,6 +223,22 @@ router.post('/refresh', async (req: Request, res: Response) => {
   const lang: Lang = (req as any).lang || getLang(req);
   const token = (req.headers['x-refresh-token'] as string) || (req.body?.refreshToken as string);
   if (!token) return res.status(400).json({ ok: false, message: t('auth.invalidToken', lang) });
+
+  const disablePersist = String(process.env.DISABLE_REFRESH_PERSISTENCE || '').toLowerCase() === 'true';
+  if (disablePersist) {
+    // Development path: verify JWT and issue new tokens without DB
+    try {
+      const decoded = jwt.verify(token, jwtSecret) as any;
+      if (decoded?.type !== 'refresh') {
+        return res.status(401).json({ ok: false, message: t('auth.invalidToken', lang) });
+      }
+      const mobile = decoded.sub as string;
+      const { accessToken, refreshToken } = await issueTokensForMobile(mobile);
+      return res.json({ ok: true, message: t('auth.refreshed', lang), token: accessToken, refreshToken });
+    } catch {
+      return res.status(401).json({ ok: false, message: t('auth.invalidToken', lang) });
+    }
+  }
 
   await ensureSchema();
   const found = await findRefreshToken(token);
