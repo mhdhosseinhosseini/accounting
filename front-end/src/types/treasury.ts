@@ -57,4 +57,6 @@ export interface Check {
   issue_date?: string | null;
   due_date?: string | null;
   notes?: string | null;
+  /** Cashbox assignment for incoming checks stored in a cashbox */
+  cashbox_id?: string | null;
 }

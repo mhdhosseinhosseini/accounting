@@ -67,6 +67,8 @@ function parseExpires(value) {
  * In development, when `DISABLE_REFRESH_PERSISTENCE=true`, skips DB writes but still returns tokens.
  */
 async function issueTokensForMobile(mobileNumber) {
+    // Read JWT secret at sign time to match middleware verification
+    const jwtSecret = getJwtSecret();
     await (0, driver_1.ensureSchema)();
     const user = await (0, driver_1.upsertUserByMobile)(mobileNumber);
     const payload = { sub: mobileNumber, role: 'user' };
@@ -208,7 +210,8 @@ router.post('/refresh', async (req, res) => {
     if (disablePersist) {
         // Development path: verify JWT and issue new tokens without DB
         try {
-            const decoded = jsonwebtoken_1.default.verify(token, jwtSecret);
+            // Verify with dynamically-read secret to avoid mismatch in dev
+            const decoded = jsonwebtoken_1.default.verify(token, getJwtSecret());
             if (decoded?.type !== 'refresh') {
                 return res.status(401).json({ ok: false, message: (0, i18n_1.t)('auth.invalidToken', lang) });
             }
@@ -254,3 +257,10 @@ router.post('/logout', async (req, res) => {
     return res.json({ ok: true, message: (0, i18n_1.t)('auth.loggedOut', lang) });
 });
 exports.default = router;
+// Function-level comment: Retrieve JWT secret dynamically at call time to avoid
+// module load order issues with dotenv in development.
+// فارسی: برای جلوگیری از عدم هم‌خوانی کلید JWT به دلیل بارگذاری dotenv،
+// کلید JWT در زمان فراخوانی خوانده می‌شود.
+function getJwtSecret() {
+    return process.env.JWT_SECRET || 'dev-secret';
+}

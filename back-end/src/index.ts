@@ -32,9 +32,10 @@ import { treasuryRouter } from './routes/treasury';
 import settingsRouter from './routes/settings';
 
 // Load environment variables
-dotenv.config();
-// Also load overrides from .env.local if present
-dotenv.config({ path: '.env.local' });
+// Prefer local .env and .env.local to override any shell vars in dev.
+// This ensures DB URLs from .env files take precedence.
+dotenv.config({ override: true });
+dotenv.config({ path: '.env.local', override: true });
 
 // Parsed OpenAPI spec cache for debugging Swagger UI
 let openapiSpec: any | null = null;

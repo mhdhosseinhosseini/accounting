@@ -72,31 +72,18 @@ function sanitizeAmountToIntegerString(value: any): string {
 
 /**
  * generateAutoCashboxCode
- * Generates a unique 4-digit code using configured start.
- * - Reads `VITE_CASHBOX_START_CODE` (4-digit) from env, defaulting to 6000.
- * - Fetches existing cashboxes and returns the first available code from start..9999.
+ * Generates a unique 4-digit code using backend resolver.
+ * - Calls `/v1/treasury/cashboxes/next-code` which uses settings
+ * - Falls back to '6000' on error
  */
 async function generateAutoCashboxCode(lang: string): Promise<string> {
-  // Determine start code from env; default to 6000 if unset/invalid
-  const raw = (import.meta as any)?.env?.VITE_CASHBOX_START_CODE;
-  const envStart = parseInt(String(raw ?? ''), 10);
-  const START_CODE = Number.isFinite(envStart) && envStart >= 1000 && envStart <= 9999 ? envStart : 6000;
   try {
-    const res = await axios.get(`${config.API_ENDPOINTS.base}/v1/treasury/cashboxes`, { headers: { 'Accept-Language': lang } });
-    const list: any[] = res.data.items || res.data.data || res.data || [];
-    const used = new Set<string>();
-    for (const it of list) {
-      const ascii = toAsciiDigits(String(it?.code ?? ''));
-      if (/^\d{4}$/.test(ascii)) used.add(ascii);
-    }
-    for (let n = START_CODE; n <= 9999; n++) {
-      const s = String(n);
-      if (!used.has(s)) return s;
-    }
-    const fallback = START_CODE;
-    return String(fallback);
+    const res = await axios.get(`${config.API_ENDPOINTS.base}/v1/treasury/cashboxes/next-code`, { headers: { 'Accept-Language': lang } });
+    const code = res?.data?.code || res?.data?.item?.code || res?.data?.data?.code;
+    if (code && /^\d{4}$/.test(String(code))) return String(code);
+    return '6000';
   } catch {
-    return String(START_CODE);
+    return '6000';
   }
 }
 

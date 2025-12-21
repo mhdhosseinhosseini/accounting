@@ -3,10 +3,8 @@ import type { Cashbox, BankAccount, Check } from '../types/treasury';
 
 export interface PaymentRowErrors {
   amount?: string;
-  cashboxId?: string;
-  bankAccountId?: string;
+  relatedInstrumentId?: string;
   reference?: string;
-  checkId?: string;
 }
 
 export interface PaymentValidationResult {
@@ -25,7 +23,7 @@ export interface PaymentValidationResult {
  *   - Valid check state (not canceled/paid/etc.) best-effort via provided checks lists
  * - Form rules:
  *   - At least one item line
- *   - Header rules: date required; fiscal year required
+ * - Header rules: date required; fiscal year required; cashbox required
  *
  * The validator is pure and UI-agnostic. It returns error strings keyed by row index
  * and a list of form-level errors. Caller provides translation via `t`.
@@ -62,6 +60,11 @@ export function validatePayment(
   if (!hasFiscalYear) {
     formErrors.push(t('pages.payments.validation.form.fiscalYearRequired', 'Fiscal year is required'));
   }
+  // Header-level: cashbox required
+  const hasCashbox = !!(form.cashboxId && String(form.cashboxId).trim().length > 0);
+  if (!hasCashbox) {
+    formErrors.push(t('pages.payments.validation.form.cashboxRequired', 'Cashbox is required'));
+  }
 
   // Build maps for duplicate reference detection (reference)
   const referenceMap = new Map<string, number[]>(); // ref -> [rowIdx]
@@ -77,14 +80,12 @@ export function validatePayment(
     }
 
     if (it.instrumentType === 'cash') {
-      if (!it.cashboxId) {
-        errs.cashboxId = t('validation.cashboxRequired', 'Cashbox is required');
-      }
+      // No item-level instrument id for cash
     }
 
     if (it.instrumentType === 'transfer') {
-      if (!it.bankAccountId) {
-        errs.bankAccountId = t('pages.payments.validation.transfer.bankRequired', 'Bank account is required');
+      if (!it.relatedInstrumentId) {
+        errs.relatedInstrumentId = t('validation.relatedInstrumentRequired', 'Related instrument is required');
       }
       const refVal = ((it as any).reference ?? (it as any).transferRef ?? '').trim();
       if (!refVal) {
@@ -97,16 +98,16 @@ export function validatePayment(
     }
 
     if (it.instrumentType === 'check' || it.instrumentType === 'checkin') {
-      if (!it.checkId) {
-        errs.checkId = t('pages.payments.validation.check.required', 'Check selection is required');
+      if (!it.relatedInstrumentId) {
+        errs.relatedInstrumentId = t('pages.payments.validation.check.required', 'Check selection is required');
       }
       // Validate check state (best-effort)
       const checksPool = it.instrumentType === 'check' ? (opts.checksOutgoing || []) : (opts.checksIncoming || []);
-      const check = checksPool.find((c) => String(c.id) === String(it.checkId || ''));
+      const check = checksPool.find((c) => String(c.id) === String(it.relatedInstrumentId || ''));
       if (check) {
         const invalidStates = new Set(['canceled','paid','returned','void']);
         if ((check as any).status && invalidStates.has(String((check as any).status).toLowerCase())) {
-          errs.checkId = t('pages.payments.validation.check.invalidState', 'Selected check is not in a valid state');
+          errs.relatedInstrumentId = t('pages.payments.validation.check.invalidState', 'Selected check is not in a valid state');
         }
         if (!Number.isFinite(Number((check as any).amount)) || Number((check as any).amount) <= 0) {
           errs.amount = t('pages.payments.validation.check.invalidAmount', 'Check amount must be greater than zero');

@@ -476,23 +476,68 @@ journalsRouter.post('/:id/post', async (req: Request, res: Response) => {
 });
 
 /**
- * DELETE /:id - Delete a journal (allowed in 'temporary' or 'draft').
+ * DELETE /:id — Delete a journal document within a single DB transaction.
+ * Ensures related entities are reverted and journal linkage is removed to maintain integrity.
+ *
+ * Behavior:
+ * - Receipts: set status 'temporary' and clear `journal_id`.
+ * - Payments: set status 'temporary' and clear `journal_id`.
+ * - Provider 'production': revert `public.purchase_orders` with status 'documented' to 'received',
+ *   and set `documented_at` and `journal_id` to NULL.
+ * - Provider or type 'sales': clear linkage from `public.orders` by NULLing `documented_at` and `journal_id`.
+ * - Finally deletes the journal row.
+ *
+ * FA:
+ * حذف سند دفتر روزنامه در قالب یک تراکنش پایگاه‌داده. این عملیات پیوندهای مرتبط را بازمی‌گرداند
+ * و برای حفظ یکپارچگی داده‌ها، ستون‌های مرتبط (مانند documented_at و journal_id) را خالی می‌کند.
+ * - رسیدها: وضعیت «موقت» و پاک‌سازی journal_id
+ * - پرداخت‌ها: وضعیت «موقت» و پاک‌سازی journal_id
+ * - ارائه‌دهنده «production»: بازگردانی سفارش‌های خرید به «رسیده» و خالی‌کردن documented_at و journal_id
+ * - نوع یا ارائه‌دهنده «sales»: پاک‌سازی پیوند سند از سفارش‌های فروش (public.orders)
  */
 journalsRouter.delete('/:id', async (req: Request, res: Response) => {
   const lang: Lang = (req as any).lang || 'en';
   const { id } = req.params;
   try {
     const p = getPool();
-    const jr = await p.query(`SELECT status, fiscal_year_id FROM journals WHERE id = $1`, [id]);
+    const jr = await p.query(`SELECT status, fiscal_year_id, provider, type FROM journals WHERE id = $1`, [id]);
     if (jr.rowCount === 0) return res.status(404).json({ ok: false, error: t('journals.notFound', lang) });
     const status = jr.rows[0].status as string;
     const fiscal_year_id = jr.rows[0].fiscal_year_id as string;
+    const provider = String(jr.rows[0].provider || '').trim().toLowerCase();
+    const jType = String(jr.rows[0].type || '').trim().toLowerCase();
     if (status === 'permanent') return res.status(400).json({ ok: false, error: t('journals.cannotDeletePosted', lang) });
     const client = await p.connect();
     try {
       await client.query('BEGIN');
       // Revert any linked receipts back to 'temporary' and clear journal link
       await client.query(`UPDATE receipts SET status = 'temporary', journal_id = NULL WHERE journal_id = $1`, [id]);
+      // Revert any linked payments back to 'temporary' and clear journal link
+      // FA: بازیابی وضعیت پرداخت‌های مرتبط به «موقت» و حذف پیوند دفتر روزنامه
+      await client.query(`UPDATE payments SET status = 'temporary', journal_id = NULL WHERE journal_id = $1`, [id]);
+
+      // Production integration: revert related purchase orders in public schema
+      // FA: بازگردانی سفارش‌های خرید مرتبط (public.purchase_orders) از «مستند» به «رسیده» و خالی‌کردن تاریخ مستندسازی و شناسهٔ سند
+      if (provider === 'production') {
+        await client.query(
+          `UPDATE public.purchase_orders
+           SET status = 'received', documented_at = NULL, journal_id = NULL
+           WHERE journal_id = $1 AND status = 'documented'`,
+          [id]
+        );
+      }
+
+      // Sales integration: clear document linkage in public.orders
+      // FA: حذف پیوند سند برای سفارش‌های فروش (public.orders) و پاک‌سازی ستون‌های documented_at و journal_id
+      if (provider === 'sales' || jType === 'sales') {
+        await client.query(
+          `UPDATE public.orders
+           SET documented_at = NULL, journal_id = NULL
+           WHERE journal_id = $1`,
+          [id]
+        );
+      }
+
       const r = await client.query(`DELETE FROM journals WHERE id = $1`, [id]);
       if ((r.rowCount || 0) === 0) {
         await client.query('ROLLBACK');

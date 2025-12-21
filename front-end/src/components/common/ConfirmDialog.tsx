@@ -134,7 +134,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       {/* Backdrop: only render when dimming is explicitly requested */}
       {dimBackground && (
         <div
-          className={backdropClassName ?? 'absolute inset-0 bg-black bg-opacity-50 transition-opacity'}
+          className={backdropClassName ?? 'inset-0 bg-black bg-opacity-50 transition-opacity'}
         ></div>
       )}
 

@@ -56,6 +56,19 @@ function normalizeToInput(r: Receipt): ReceiptInput {
   };
 }
 
+/**
+ * todayIso
+ * Returns today's date in local timezone as ISO string (YYYY-MM-DD).
+ * Ensures JalaliDatePicker receives Gregorian ISO while UI can display Jalali.
+ */
+function todayIso(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 const ReceiptFormPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
@@ -168,6 +181,20 @@ const ReceiptFormPage: React.FC = () => {
 
   useEffect(() => { if (editId) loadReceipt(editId); }, [editId]);
 
+/**
+ * defaultNewReceiptDate
+ * Sets today's date by default when creating a new receipt.
+ * Keeps existing date when editing or if a date is already set.
+ */
+useEffect(() => {
+  if (!editId) {
+    setForm((prev) => ({
+      ...prev,
+      date: (prev.date && String(prev.date).trim() !== '') ? prev.date : todayIso(),
+    }));
+  }
+}, [editId]);
+
   /**
    * loadOptions
    * Fetch parties and treasury lists, plus card readers for each bank account.
@@ -180,13 +207,14 @@ const ReceiptFormPage: React.FC = () => {
    */
   async function loadOptions() {
     try {
-      const [details, cashs, banks, chks, codesRes] = await Promise.all([
+      const [details, cashs, banks, chks, codesRes, settingsRes] = await Promise.all([
         listDetails(),
         listCashboxes(),
         listBankAccounts(),
         // Request only available checks, include ones used by the current receipt in edit mode
         listChecks({ available: true, excludeReceiptId: editId }),
         axios.get(`${config.API_ENDPOINTS.base}/v1/codes`, { headers: { 'Accept-Language': lang } }),
+        axios.get(`${config.API_ENDPOINTS.base}/v1/settings`, { headers: { 'Accept-Language': lang } }),
       ]);
       // Use Details directly as options (already sorted)
       setDetailOptions(details);
@@ -199,19 +227,16 @@ const ReceiptFormPage: React.FC = () => {
       const activeCodes = (codesList || []).filter((c) => (c as any).is_active !== false);
       setSpecialCodes(activeCodes.map((c) => ({ id: String(c.id), name: `${String(c.code)}-${String(c.title)}`, code: String(c.code), title: String(c.title) })));
       /**
-       * envDefaultReceiptCode
-       * Returns the default receipt special code from environment config or null.
+       * settingsDefaultReceiptSpecial
+       * Uses settings key `CODE_TREASURY_COUNTERPARTY_RECEIPT` to determine
+       * the default special code for new receipts.
        */
-      function envDefaultReceiptCode(): string | null {
-        const v = (config as any)?.DEFAULT_CODES?.receiptSpecial;
-        return v && String(v).trim().length > 0 ? String(v) : null;
-      }
-      // Apply env-driven default special code for new receipts
       if (!editId) {
-        const envCode = envDefaultReceiptCode();
-        if (envCode) {
-          const def = activeCodes.find((c) => String(c.code) === envCode);
-          setForm((prev) => ({ ...prev, specialCodeId: prev.specialCodeId ?? (def ? String(def.id) : null) }));
+        const settingsList: any[] = (settingsRes?.data?.items || settingsRes?.data?.data || []) as any[];
+        const receiptSetting = settingsList.find((s: any) => String(s.code) === 'CODE_TREASURY_COUNTERPARTY_RECEIPT');
+        const defaultSpecialId = receiptSetting?.special_id ? String(receiptSetting.special_id) : null;
+        if (defaultSpecialId) {
+          setForm((prev) => ({ ...prev, specialCodeId: prev.specialCodeId ?? defaultSpecialId }));
         }
       }
       // Fetch card readers per bank account (batch)

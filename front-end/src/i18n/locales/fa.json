@@ -119,6 +119,7 @@
     "createUnder": "ایجاد زیرمجموعه",
     "save": "ذخیره",
     "delete": "حذف",
+    "deleteDocument": "حذف سند",
     "saving": "در حال ذخیره...",
     "back": "بازگشت",
     "apply": "اعمال",
@@ -303,6 +304,12 @@
       }
     },
     "payments": {
+      "fields": { "cashbox": "صندوق" },
+      "items": { "cashbox": "صندوق" },
+      "validation": { 
+        "form": { "cashboxRequired": "انتخاب صندوق الزامی است" } 
+      },
+      "documentDeleted": "سند با موفقیت حذف شد",
       "title": "پرداختی‌ها",
       "list": "فهرست پرداختی‌ها",
       "createTitle": "ثبت پرداخت",
@@ -310,6 +317,9 @@
       "searchPlaceholder": "جستجوی پرداخت‌ها",
       "unsavedChangesConfirm": "تغییرات ذخیره‌نشده حذف شود؟",
       "unsavedChangesTitle": "توجه",
+      "confirmDelete":"این پرداخت حذف شود؟",
+      "deleted":"پرداخت با موفقیت حذف شد",
+      "confirmDeleteDocument":"این سند پرداخت حذف شود؟",
       "fields": {
         "date": "تاریخ",
         "description": "شرح",

@@ -152,6 +152,11 @@
     "value": "Value"
   },
   "pages": {
+    "payments": {
+      "fields": { "cashbox": "Cashbox" },
+      "items": { "cashbox": "Cashbox" },
+      "validation": { "form": { "cashboxRequired": "Cashbox is required" } }
+    },
     "reports": {
       "title": "Reports",
       "filters": "Filters",

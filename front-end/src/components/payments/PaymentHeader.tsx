@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { JalaliDatePicker } from '../common/JalaliDatePicker';
 import SearchableSelect, { type SelectableOption } from '../common/SearchableSelect';
 import { Link } from 'react-router-dom';
+import type { Cashbox } from '../../types/treasury';
 
 /**
  * DetailOption
@@ -27,17 +28,23 @@ export interface PaymentHeaderProps {
   fiscalYearId?: string | null;
   detailOptions: DetailOption[];
   specialCodeOptions: CodeOption[];
-  onChange: (patch: Partial<{ date: string; description: string; detailId: string | null; specialCodeId: string | null }>) => void;
+  // Header-level cashbox
+  cashboxId?: string | null;
+  cashboxes: Cashbox[];
+  /** Optional error message for cashbox required validation */
+  cashboxError?: string;
+  onChange: (patch: Partial<{ date: string; description: string; detailId: string | null; specialCodeId: string | null; cashboxId: string | null }>) => void;
 }
 
 /**
  * PaymentHeader
  * Renders payment header fields with controlled inputs and read-only badges.
  */
-const PaymentHeader: React.FC<PaymentHeaderProps> = ({ date, description, detailId, specialCodeId, status, number, fiscalYearId, detailOptions, specialCodeOptions, onChange }) => {
+const PaymentHeader: React.FC<PaymentHeaderProps> = ({ date, description, detailId, specialCodeId, status, number, fiscalYearId, detailOptions, specialCodeOptions, cashboxId, cashboxes, cashboxError, onChange }) => {
   const { t } = useTranslation();
   const selectedDetail: DetailOption | null = (detailOptions || []).find((d) => String(d.id) === String(detailId)) || null;
   const selectedSpecial: CodeOption | null = (specialCodeOptions || []).find((c) => String(c.id) === String(specialCodeId)) || null;
+  const selectedCashbox: (SelectableOption & Cashbox) | null = (cashboxes || []).find((c) => String(c.id) === String(cashboxId || '')) as any || null;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -112,6 +119,24 @@ const PaymentHeader: React.FC<PaymentHeaderProps> = ({ date, description, detail
           )}
           inputDisplayMode="label"
           noOptionsText={t('pages.payments.noSpecialCode', 'No code found')}
+        />
+      </div>
+
+      {/* Cashbox selection (header-level) */}
+      <div>
+        <SearchableSelect<SelectableOption & Cashbox>
+          options={cashboxes as any}
+          value={selectedCashbox as any}
+          onChange={(val) => onChange({ cashboxId: (val?.id ? String(val.id) : null) })}
+          label={t('pages.payments.fields.cashbox', 'Cashbox')}
+          placeholder={t('pages.payments.fields.cashbox', 'Cashbox')}
+          size="small"
+          fullWidth
+          required
+          error={cashboxError || undefined}
+          helperText={cashboxError || undefined}
+          inputDisplayMode="label"
+          noOptionsText={t('pages.payments.items.cashbox', 'Cashbox')}
         />
       </div>
 

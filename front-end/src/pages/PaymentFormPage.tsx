@@ -35,6 +35,13 @@ function normalizeEditId(id: string | null): string | null {
 /**
  * normalizeToInput
  * Maps loaded payment into editable input shape.
+ *
+ * Implementation notes:
+ * - Prefer instrument-specific source IDs for UI binding.
+ *   - For 'transfer', use `bankAccountId` (or `bank_account_id`).
+ *   - For 'check'/'checkin', use `checkId` (or `check_id`).
+ *   - Fallback to `relatedInstrumentId` only for other types.
+ * - This ensures the form shows the correct selected values when editing.
  */
 function normalizeToInput(p: Payment): PaymentInput {
   return {
@@ -43,20 +50,44 @@ function normalizeToInput(p: Payment): PaymentInput {
     fiscalYearId: p.fiscalYearId || null,
     detailId: p.detailId || null,
     specialCodeId: p.specialCodeId || null,
-    items: Array.isArray(p.items) ? p.items.map((it) => ({
-      id: it.id,
-      instrumentType: it.instrumentType,
-      amount: Number(it.amount || 0),
-      cashboxId: it.cashboxId || null,
-      bankAccountId: it.bankAccountId || null,
-      cardReaderId: it.cardReaderId || null,
-      reference: (it as any).reference ?? (it as any).cardRef ?? (it as any).transferRef ?? null,
-      checkId: it.checkId || null,
-      destinationType: it.destinationType || null,
-      destinationId: it.destinationId || null,
-      position: it.position || null,
-    })) as PaymentItem[] : [],
+    // Map header-level cashbox when present
+    cashboxId: (p as any).cashboxId || null,
+    items: Array.isArray(p.items) ? p.items.map((it) => {
+      const anyIt: any = it as any;
+      // Prefer underlying instrument entity IDs for proper UI selection
+      let instrumentId: string | number | null = null;
+      if (it.instrumentType === 'transfer') {
+        instrumentId = anyIt.bankAccountId ?? anyIt.bank_account_id ?? null;
+      } else if (it.instrumentType === 'check' || it.instrumentType === 'checkin') {
+        instrumentId = anyIt.checkId ?? anyIt.check_id ?? null;
+      } else {
+        instrumentId = anyIt.relatedInstrumentId ?? null;
+      }
+      return ({
+        id: it.id,
+        instrumentType: it.instrumentType,
+        amount: Number(it.amount || 0),
+        relatedInstrumentId: instrumentId,
+        reference: anyIt.reference ?? anyIt.cardRef ?? anyIt.transferRef ?? null,
+        destinationType: it.destinationType || null,
+        destinationId: it.destinationId || null,
+        position: it.position || null,
+      }) as PaymentItem;
+    }) : [],
   };
+}
+
+/**
+ * todayIso
+ * Returns today's date in local timezone as ISO string (YYYY-MM-DD).
+ * Ensures JalaliDatePicker receives Gregorian ISO while UI can display Jalali.
+ */
+function todayIso(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 const PaymentFormPage: React.FC = () => {
@@ -68,7 +99,7 @@ const PaymentFormPage: React.FC = () => {
   const params = useParams();
   const editId = normalizeEditId(params.id ?? null);
 
-  const [form, setForm] = useState<PaymentInput>({ date: '', description: '', items: [] });
+  const [form, setForm] = useState<PaymentInput>({ date: '', description: '', items: [], cashboxId: null });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -242,36 +273,33 @@ const PaymentFormPage: React.FC = () => {
    */
   async function loadTreasuryOptions() {
     try {
-      const [details, cb, ba, outgoingChecks, incomingChecksRes, codesRes] = await Promise.all([
+      const [details, cb, ba, outgoingChecks, codesRes, settingsRes] = await Promise.all([
         listDetails(),
         listCashboxes(),
         listBankAccounts(),
         listChecks({ available: true, excludePaymentId: editId || null, type: 'outgoing' }),
-        listChecks({ available: true, excludePaymentId: editId || null, type: 'incoming' }),
         axios.get(`${config.API_ENDPOINTS.base}/v1/codes`, { headers: { 'Accept-Language': lang } }),
+        axios.get(`${config.API_ENDPOINTS.base}/v1/settings`, { headers: { 'Accept-Language': lang } }),
       ]);
       setDetailOptions(details);
       setCashboxes(cb);
       setBankAccounts(ba);
       setChecks(outgoingChecks);
-      setIncomingChecks(incomingChecksRes);
+      // Do NOT set incomingChecks here; it is reloaded based on cashbox/items to ensure selected 'checkin' remains visible in edit mode.
       // Only include active 'specific' codes for the Special Code dropdown
       const codesList: Array<{ id: string; code: string; title: string; is_active?: boolean; kind?: string }> = (codesRes?.data?.data || codesRes?.data?.items || []) as any[];
       const specificActiveCodes = (codesList || []).filter((c: any) => String(c.kind) === 'specific' && c.is_active !== false);
       setSpecialCodes(specificActiveCodes.map((c: any) => ({ id: String(c.id), name: `${String(c.code)}-${String(c.title)}`, code: String(c.code), title: String(c.title) })));
       /**
-       * envDefaultPaymentCode
-       * Returns the default payment special code from environment config or null.
+       * settingsDefaultPaymentSpecial
+       * Uses settings key `CODE_TREASURY_COUNTERPARTY_PAYMENT` to determine
+       * the default special code for new payments. Falls back to existing state.
        */
-      function envDefaultPaymentCode(): string | null {
-        const v = (config as any)?.DEFAULT_CODES?.paymentSpecial;
-        return v && String(v).trim().length > 0 ? String(v) : null;
-      }
-      // Apply env-driven default special code for new payments (do not override existing)
-      const envCode = envDefaultPaymentCode();
-      if (envCode) {
-        const def = (specificActiveCodes || []).find((c: any) => String(c.code) === envCode);
-        setForm((prev) => ({ ...prev, specialCodeId: prev.specialCodeId ?? (def ? String(def.id) : prev.specialCodeId ?? null) }));
+      const settingsList: any[] = (settingsRes?.data?.items || settingsRes?.data?.data || []) as any[];
+      const paymentSetting = settingsList.find((s: any) => String(s.code) === 'CODE_TREASURY_COUNTERPARTY_PAYMENT');
+      const defaultSpecialId = paymentSetting?.special_id ? String(paymentSetting.special_id) : null;
+      if (defaultSpecialId) {
+        setForm((prev) => ({ ...prev, specialCodeId: prev.specialCodeId ?? defaultSpecialId }));
       }
 
     } catch (e) {
@@ -286,11 +314,13 @@ const PaymentFormPage: React.FC = () => {
   /**
    * normalizePaymentStatus
    * Converts backend payment statuses to UI-supported ones for payments only.
-   * Maps 'temporary' → 'draft'; preserves 'posted'; defaults to 'draft'.
+   * Maps 'temporary' and 'sent' → 'draft'; 'permanent'/'posted' → 'posted'.
    */
   function normalizePaymentStatus(s?: string | null): 'draft' | 'posted' {
     const v = String(s || '').toLowerCase();
-    return v === 'temporary' ? 'draft' : v === 'posted' ? 'posted' : 'draft';
+    if (v === 'temporary' || v === 'sent') return 'draft';
+    if (v === 'permanent' || v === 'posted') return 'posted';
+    return 'draft';
   }
   async function loadPayment(id: string) {
     setLoading(true); setError(null);
@@ -309,23 +339,88 @@ const PaymentFormPage: React.FC = () => {
 
   useEffect(() => { if (editId) loadPayment(editId); }, [editId]);
   useEffect(() => { loadTreasuryOptions(); }, [editId]);
+  // Set default date to today for new payments
+  useEffect(() => {
+    /**
+     * Default date for new payments
+     * On the new payment page, initialize the date to today.
+     * Does not override an existing date and never runs in edit mode.
+     * FA: در فرم پرداخت جدید، تاریخ بصورت خودکار روی امروز قرار می‌گیرد.
+     */
+    if (!editId) {
+      setForm((prev) => ({ ...prev, date: (prev.date && String(prev.date).trim() !== '') ? prev.date : todayIso() }));
+    }
+  }, [editId]);
+
+  /**
+   * reloadIncomingChecksForCashbox
+   * Refetches incoming checks when header cashbox changes to show only checks
+   * in the selected cashbox. In edit mode with check-in items, includes 'spent'.
+   */
+   async function reloadIncomingChecksForCashbox(): Promise<void> {
+     try {
+       const hasCheckinItems = (form.items || []).some((it) => String(it.instrumentType).toLowerCase() === 'checkin');
+       const res = await listChecks({
+         excludePaymentId: editId || null,
+         type: 'incoming',
+         status: (!editId || !hasCheckinItems) ? 'incashbox' : undefined,
+         cashboxId: (form.cashboxId != null ? String(form.cashboxId) : undefined),
+       });
+       setIncomingChecks(res);
+     } catch {
+       // swallow
+     }
+   }
+
+  // Refresh incoming checks whenever header cashbox, editId, or items change
+  useEffect(() => { reloadIncomingChecksForCashbox(); }, [form.cashboxId, editId, form.items]);
+
+  /**
+   * buildPaymentPayload
+   * Converts current form state into backend PaymentInput shape.
+   * - Maps UI `relatedInstrumentId` to instrument-specific fields (bankAccountId/checkId)
+   * - Preserves positions and trims transfer reference
+   * FA: نگاشت اطلاعات فرم به قالب مورد انتظار سرور برای ذخیره پرداخت.
+   */
+  function buildPaymentPayload(): PaymentInput {
+    return {
+      date: form.date || '',
+      description: form.description || '',
+      fiscalYearId: form.fiscalYearId || null,
+      detailId: form.detailId || null,
+      specialCodeId: form.specialCodeId || null,
+      cashboxId: form.cashboxId || null,
+      items: (form.items || []).map((it, idx) => {
+        const out: PaymentItem = {
+          instrumentType: it.instrumentType,
+          amount: Number(it.amount || 0),
+          reference: (it.instrumentType === 'transfer' ? String(it.reference || '').trim() || null : (it.reference || null)),
+          destinationType: it.destinationType || null,
+          destinationId: it.destinationId || null,
+          position: it.position ?? idx + 1,
+        } as any;
+        if (it.instrumentType === 'transfer') {
+          (out as any).bankAccountId = it.relatedInstrumentId != null ? String(it.relatedInstrumentId) : null;
+        }
+        if (it.instrumentType === 'check' || it.instrumentType === 'checkin') {
+          (out as any).checkId = it.relatedInstrumentId != null ? String(it.relatedInstrumentId) : null;
+        }
+        return out;
+      }),
+    };
+  }
 
   /**
    * handleSave
    * Creates or updates a draft payment.
+   * - Maps UI `relatedInstrumentId` to backend fields: bankAccountId/checkId.
+   * - Persian note (FA): نگاشت شناسه‌ها براساس نوع ابزار پرداخت انجام می‌شود و فیلد کارت حذف شده است.
    * - In both create and edit modes, navigates back to payments list upon success.
    */
   async function handleSave() {
     setSaving(true); setError(null);
     try {
-      const payload: PaymentInput = {
-        date: form.date || '',
-        description: form.description || '',
-        fiscalYearId: form.fiscalYearId || null,
-        detailId: form.detailId || null,
-        specialCodeId: form.specialCodeId || null,
-        items: (form.items || []).map((it, idx) => ({ ...it, position: it.position ?? idx + 1 })),
-      };
+      const payload: PaymentInput = buildPaymentPayload();
       let saved: Payment;
       if (!editId) {
         saved = await createPayment(payload);
@@ -347,25 +442,30 @@ const PaymentFormPage: React.FC = () => {
 
   /**
    * handlePost
-   * Posts (finalizes) the current draft payment.
-  * - After successful post, navigates back to payments list.
+   * Saves current edits, then posts (finalizes) the payment.
+   * - Ensures latest changes are persisted before posting
+   * - On success, navigates back to payments list
+   * FA: ابتدا ذخیره، سپس ثبت پرداخت انجام می‌شود.
    */
-   async function handlePost() {
-     if (!editId) return;
-     setSaving(true); setError(null);
-     try {
-       const posted = await postPayment(editId);
-       setStatus(normalizePaymentStatus(posted.status));
-       setNumber(posted.number || number);
-      // Redirect to payments list after posting
+  async function handlePost() {
+    if (!editId) return;
+    setSaving(true); setError(null);
+    try {
+      // Save current changes first
+      const payload: PaymentInput = buildPaymentPayload();
+      await updatePayment(editId, payload);
+      // Then post the saved draft
+      const posted = await postPayment(editId);
+      setStatus('sent');
+      setNumber(posted.number || number);
       navigate('/treasury/payments');
-     } catch (e: any) {
-       const serverMsg = e?.response?.data?.message || e?.response?.data?.error;
-       setError(serverMsg || e?.message || 'Error');
-     } finally {
-       setSaving(false);
-     }
-   }
+    } catch (e: any) {
+      const serverMsg = e?.response?.data?.message || e?.response?.data?.error;
+      setError(serverMsg || e?.message || 'Error');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   /**
    * loadCheckbooksForAccount
@@ -430,7 +530,7 @@ const PaymentFormPage: React.FC = () => {
       issue_date: outgoingForm.issue_date || null,
       due_date: outgoingForm.due_date || null,
       number: toAsciiDigits(outgoingForm.number),
-      party_detail_id: outgoingForm.party_detail_id || null,
+      beneficiary_detail_id: outgoingForm.party_detail_id || null,
       amount: toAsciiDigits(outgoingForm.amount),
       notes: outgoingForm.notes || null,
     };
@@ -516,12 +616,15 @@ const PaymentFormPage: React.FC = () => {
    */
   const filteredChecks = useMemo(() => {
     const payerId = form.detailId != null ? String(form.detailId) : '';
-    if (!payerId) return checks || [];
-    return (checks || []).filter((c) => {
+    const base = checks || [];
+    if (!payerId) return base;
+    const matches = base.filter((c) => {
       const owner = (c as any).party_detail_id != null ? String((c as any).party_detail_id)
         : ((c as any).beneficiary_detail_id != null ? String((c as any).beneficiary_detail_id) : '');
       return owner && owner === payerId;
     });
+    // UX fallback: if no checks match the selected payer, show all
+    return matches.length > 0 ? matches : base;
   }, [checks, form.detailId]);
 
   return (
@@ -542,6 +645,10 @@ const PaymentFormPage: React.FC = () => {
           fiscalYearId={form.fiscalYearId != null ? String(form.fiscalYearId) : null}
           detailOptions={detailOptions}
           specialCodeOptions={specialCodes}
+          // Pass header-level cashbox props
+          cashboxId={form.cashboxId != null ? String(form.cashboxId) : null}
+          cashboxes={cashboxes}
+          cashboxError={!form.cashboxId ? tt('pages.payments.validation.form.cashboxRequired','Cashbox is required') : ''}
           onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
         />
 
@@ -560,6 +667,9 @@ const PaymentFormPage: React.FC = () => {
           onSetPayerDetailId={(id) => setForm((prev) => ({ ...prev, detailId: id }))}
           // Row-level validation errors for inline display
           rowErrorsByIndex={rowErrorsByIndex}
+          // Auto-set header cashbox from selected incoming check when empty
+          headerCashboxId={form.cashboxId != null ? String(form.cashboxId) : null}
+          onAutoSetCashboxId={(id) => setForm((prev) => ({ ...prev, cashboxId: prev.cashboxId ?? id }))}
         />
 
         <div className="flex items-center justify-between bg-white border rounded p-4">

@@ -35,6 +35,10 @@ export interface PaymentItemsTableProps {
   onSetPayerDetailId?: (id: string) => void;
   /** Row-level validation errors keyed by row index */
   rowErrorsByIndex?: Record<number, PaymentRowErrors>;
+  /** Header cashbox id to avoid overriding when already set */
+  headerCashboxId?: string | null;
+  /** Auto-set header cashbox from selected incoming check */
+  onAutoSetCashboxId?: (id: string) => void;
 }
 
 /**
@@ -58,7 +62,7 @@ function resolveCheckOwnerDetailId(c: Check | (SelectableOption & Check) | null 
   return pid || legacy || null;
 }
 
-const PaymentItemsTable: React.FC<PaymentItemsTableProps> = ({ items, onChange, cashboxes, bankAccounts, checks, incomingChecks, onIssueOutgoingCheck, payerDetailId, onSetPayerDetailId, rowErrorsByIndex }) => {
+const PaymentItemsTable: React.FC<PaymentItemsTableProps> = ({ items, onChange, cashboxes, bankAccounts, checks, incomingChecks, onIssueOutgoingCheck, payerDetailId, onSetPayerDetailId, rowErrorsByIndex, headerCashboxId, onAutoSetCashboxId }) => {
   const { t } = useTranslation();
 
   /**
@@ -204,26 +208,24 @@ const PaymentItemsTable: React.FC<PaymentItemsTableProps> = ({ items, onChange, 
         <div className="text-gray-600">{t('common.noItems', 'No items')}</div>
       )}
       {(items || []).map((it, idx) => {
-        const selectedCashbox = findCashbox(it.cashboxId || undefined);
-        const selectedBankAccount = findBankAccount(it.bankAccountId || undefined);
-        const selectedCheck = findCheck(it.checkId || undefined);
-        const selectedDestinationCashbox = it.destinationType === 'cashbox' ? findCashbox(it.destinationId || undefined) : null;
-        const selectedDestinationBank = it.destinationType === 'bank' ? findBankAccount(it.destinationId || undefined) : null;
         const rowErrs = (rowErrorsByIndex || {})[idx] || {};
 
         return (
           <div key={idx} className="grid grid-cols-1 md:grid-cols-6 gap-2 mb-2 items-start">
             {/* Instrument type */}
             <div className="md:col-span-1">
-              {/* Instrument type selector; for 'check'/'checkin' we clear destination fields */}
+              {/* Instrument type selector; reset related instrument and destination when changing */}
               <Select
                 value={it.instrumentType}
                 onChange={(e) => {
                   const newType = e.target.value as InstrumentType;
-                  const patch: Partial<PaymentItem> = { instrumentType: newType };
+                  const patch: Partial<PaymentItem> = { instrumentType: newType, relatedInstrumentId: null };
                   if (newType === 'check' || newType === 'checkin') {
                     patch.destinationType = null;
                     patch.destinationId = null;
+                  }
+                  if (newType !== 'transfer') {
+                    patch.reference = null;
                   }
                   onChange(updateRow(items, idx, patch));
                 }}
@@ -257,31 +259,27 @@ const PaymentItemsTable: React.FC<PaymentItemsTableProps> = ({ items, onChange, 
             {/* Instrument-specific fields */}
             <div className="md:col-span-3 w-full">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                {/* Cash */}
-                {it.instrumentType === 'cash' && (
-                  <SearchableSelect<SelectableOption & Cashbox>
-                    options={cashboxes as any}
-                    value={selectedCashbox as any}
-                    onChange={(val) => onChange(updateRow(items, idx, { cashboxId: (val?.id ? String(val.id) : null) }))}
-                    label={t('pages.payments.items.cashbox', 'Cashbox')}
-                    placeholder={t('pages.payments.items.cashbox', 'Cashbox')}
-                    size="small"
-                    fullWidth
-                    inputDisplayMode="label"
-                    error={rowErrs.cashboxId}
-                    helperText={rowErrs.cashboxId}
-                  />
-                )}
+                {/* Cash: no related instrument selector */}
+                {it.instrumentType === 'cash' && (<></>)}
 
                 {/* Incoming Check */}
                 {it.instrumentType === 'checkin' && (
                   <>
                     <SearchableSelect<SelectableOption & Check>
                       options={incomingChecks as any}
-                      value={findIncomingCheck(it.checkId || undefined) as any}
+                      value={findIncomingCheck(it.relatedInstrumentId || undefined) as any}
                       onChange={(val) => {
                         const amt = val ? Number((val as any).amount || 0) : 0;
-                        onChange(updateRow(items, idx, { checkId: (val?.id ? String(val.id) : null), amount: amt }));
+                        onChange(updateRow(items, idx, { relatedInstrumentId: (val?.id ? String(val.id) : null), amount: amt }));
+                        /**
+                         * Auto-set header cashbox from the selected incoming check's cashbox_id
+                         * Only applies when header cashbox is not already selected.
+                         * Notes (FA): با انتخاب چک دریافتی، در صورت خالی بودن فیلد صندوق، مقدار صندوق از چک تنظیم می‌شود.
+                         */
+                        if (onAutoSetCashboxId && !headerCashboxId) {
+                          const cbid = (val as any)?.cashbox_id;
+                          if (cbid) onAutoSetCashboxId(String(cbid));
+                        }
                       }}
                       label={t('pages.payments.items.check', 'Check')}
                       placeholder={t('pages.payments.items.check', 'Check')}
@@ -294,8 +292,8 @@ const PaymentItemsTable: React.FC<PaymentItemsTableProps> = ({ items, onChange, 
                           <span style={{ color: '#111' }}>{getIncomingCheckLabel(option as unknown as Check)}</span>
                         </li>
                       )}
-                      error={rowErrs.checkId}
-                      helperText={rowErrs.checkId}
+                      error={(rowErrorsByIndex || {})[idx]?.relatedInstrumentId}
+                      helperText={(rowErrorsByIndex || {})[idx]?.relatedInstrumentId}
                     />
                   </>
                 )}
@@ -305,8 +303,8 @@ const PaymentItemsTable: React.FC<PaymentItemsTableProps> = ({ items, onChange, 
                   <>
                     <SearchableSelect<SelectableOption & BankAccount>
                       options={bankAccounts as any}
-                      value={selectedBankAccount as any}
-                      onChange={(val) => onChange(updateRow(items, idx, { bankAccountId: (val?.id ? String(val.id) : null), reference: null }))}
+                      value={findBankAccount(it.relatedInstrumentId || undefined) as any}
+                      onChange={(val) => onChange(updateRow(items, idx, { relatedInstrumentId: (val?.id ? String(val.id) : null), reference: null }))}
                       label={t('pages.payments.items.bankAccount', 'Bank Account')}
                       placeholder={t('pages.payments.items.bankAccount', 'Bank Account')}
                       size="small"
@@ -318,16 +316,16 @@ const PaymentItemsTable: React.FC<PaymentItemsTableProps> = ({ items, onChange, 
                           <span style={{ color: '#111' }}>{getBankAccountLabel(option as unknown as BankAccount)}</span>
                         </li>
                       )}
-                      error={rowErrs.bankAccountId}
-                      helperText={rowErrs.bankAccountId}
+                      error={(rowErrorsByIndex || {})[idx]?.relatedInstrumentId}
+                      helperText={(rowErrorsByIndex || {})[idx]?.relatedInstrumentId}
                     />
                     <TextField
                       label={t('pages.payments.items.reference', 'Reference')}
                       value={it.reference || ''}
                       onChange={(e) => onChange(updateRow(items, idx, { reference: e.target.value || null }))}
                       size="small"
-                      error={Boolean((rowErrs as any).reference)}
-                      helperText={(rowErrs as any).reference}
+                      error={Boolean(((rowErrorsByIndex || {})[idx] as any)?.reference)}
+                      helperText={((rowErrorsByIndex || {})[idx] as any)?.reference}
                     />
                   </>
                 )}
@@ -337,10 +335,10 @@ const PaymentItemsTable: React.FC<PaymentItemsTableProps> = ({ items, onChange, 
                   <>
                     <SearchableSelect<SelectableOption & Check>
                       options={checks as any}
-                      value={selectedCheck as any}
+                      value={findCheck(it.relatedInstrumentId || undefined) as any}
                       onChange={(val) => {
                         const amt = val ? Number((val as any).amount || 0) : 0;
-                        onChange(updateRow(items, idx, { checkId: (val?.id ? String(val.id) : null), amount: amt }));
+                        onChange(updateRow(items, idx, { relatedInstrumentId: (val?.id ? String(val.id) : null), amount: amt }));
                         // Auto-fill payer from selected check owner when header is empty
                         if (!payerDetailId && onSetPayerDetailId) {
                           const ownerId = resolveCheckOwnerDetailId(val as any);
@@ -358,8 +356,8 @@ const PaymentItemsTable: React.FC<PaymentItemsTableProps> = ({ items, onChange, 
                           <span style={{ color: '#111' }}>{getCheckLabel(option as unknown as Check)}</span>
                         </li>
                       )}
-                      error={rowErrs.checkId}
-                      helperText={rowErrs.checkId}
+                      error={(rowErrorsByIndex || {})[idx]?.relatedInstrumentId}
+                      helperText={(rowErrorsByIndex || {})[idx]?.relatedInstrumentId}
                     />
 
                   </>

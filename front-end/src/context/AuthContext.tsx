@@ -150,6 +150,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     navigate('/login');
   };
 
+  // Function-level comment: Registers a global Axios interceptor to catch 401 responses
+  // and enforce a consistent auth recovery flow (attempt dev bootstrap, then logout).
+  // فارسی: این اینترسپتور برای مدیریت وضعیت ۴۰۱ و تلاش برای ورود خودکار در حالت توسعه،
+  // سپس خروج و هدایت به صفحه ورود استفاده می‌شود.
+  useEffect(() => {
+    const id = axios.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const status = error?.response?.status;
+        if (status === 401) {
+          try {
+            // Attempt dev auto-login if enabled and no token is present
+            if (!token && devAutoLogin) {
+              await devBootstrapLogin();
+            }
+          } catch {
+            // Swallow errors from bootstrap attempt; proceed to logout
+          }
+          // Enforce logout and redirection to login after handling
+          logout();
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => {
+      axios.interceptors.response.eject(id);
+    };
+  }, [token, devAutoLogin, logout]);
+
   const value: AuthContextType = {
     user,
     token,
@@ -173,3 +202,4 @@ export const useAuth = () => {
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
 };
+

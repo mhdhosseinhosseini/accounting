@@ -121,6 +121,10 @@ export async function ensureSchema(): Promise<void> {
     );
   `);
 
+  // Public Users: add "Details ID" column in public schema for cross-linking
+  // Nullable TEXT to avoid impacting existing records; can be filled later.
+  await p.query('ALTER TABLE IF EXISTS public.users ADD COLUMN IF NOT EXISTS "Details ID" TEXT');
+
   // Ensure legacy DBs have the new 'kind' column
   await p.query(`ALTER TABLE IF EXISTS details ADD COLUMN IF NOT EXISTS kind BOOLEAN DEFAULT TRUE NOT NULL`);
 
@@ -358,6 +362,22 @@ export async function ensureSchema(): Promise<void> {
   // Ensure type column exists on legacy DBs
   await p.query(`ALTER TABLE IF EXISTS settings ADD COLUMN IF NOT EXISTS type TEXT`);
 
+  // Seed settings for numeric start codes if missing
+  try {
+    await p.query(
+      `INSERT INTO settings (id, code, name, value, type, created_at, updated_at)
+       SELECT $1, 'VITE_CASHBOX_START_CODE', 'کد شروع صندوق', '6000'::jsonb, 'digits', NOW(), NOW()
+       WHERE NOT EXISTS (SELECT 1 FROM settings WHERE code = 'VITE_CASHBOX_START_CODE')`,
+      [randomUUID()]
+    );
+    await p.query(
+      `INSERT INTO settings (id, code, name, value, type, created_at, updated_at)
+       SELECT $1, 'VITE_BANK_DETAIL_START_CODE', 'کد شروع جزئیات حساب بانکی', '6100'::jsonb, 'digits', NOW(), NOW()
+       WHERE NOT EXISTS (SELECT 1 FROM settings WHERE code = 'VITE_BANK_DETAIL_START_CODE')`,
+      [randomUUID()]
+    );
+  } catch {}
+
   /**
    * Migration: rename legacy `kind` column to `special_code` in `settings` table.
    * Some older databases may have stored a `kind` marker; this block safely
@@ -549,11 +569,19 @@ export async function ensureSchema(): Promise<void> {
     );
   `);
 
-  // Ensure column rename for legacy DBs
+  // Ensure column rename for legacy DBs (guard against collision)
   await p.query(`DO $$
   BEGIN
     IF EXISTS (
-      SELECT 1 FROM information_schema.columns WHERE table_name = 'bank_accounts' AND column_name = 'code'
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = 'bank_accounts'
+        AND column_name = 'code'
+    ) AND NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = 'bank_accounts'
+        AND column_name = 'account_number'
     ) THEN
       EXECUTE 'ALTER TABLE bank_accounts RENAME COLUMN code TO account_number';
     END IF;
@@ -566,10 +594,10 @@ export async function ensureSchema(): Promise<void> {
   await p.query(`ALTER TABLE IF EXISTS bank_accounts ADD COLUMN IF NOT EXISTS starting_date TIMESTAMPTZ DEFAULT NOW() NOT NULL`);
   await p.query(`ALTER TABLE IF EXISTS bank_accounts ADD COLUMN IF NOT EXISTS bank_id TEXT REFERENCES banks(id) ON DELETE SET NULL`);
   await p.query(`CREATE INDEX IF NOT EXISTS idx_bank_accounts_bank_id ON bank_accounts(bank_id)`);
-// Remove deprecated bank_name column if it exists (we compute label via JOINs)
-await p.query(`ALTER TABLE IF EXISTS bank_accounts DROP COLUMN IF EXISTS bank_name`);
-// Ensure linking to Details via handler_detail_id exists
-await p.query(`ALTER TABLE IF EXISTS bank_accounts ADD COLUMN IF NOT EXISTS handler_detail_id TEXT REFERENCES details(id) ON DELETE SET NULL`);
+  // Remove deprecated bank_name column if it exists (we compute label via JOINs)
+  await p.query(`ALTER TABLE IF EXISTS bank_accounts DROP COLUMN IF EXISTS bank_name`);
+  // Ensure linking to Details via handler_detail_id exists
+  await p.query(`ALTER TABLE IF EXISTS bank_accounts ADD COLUMN IF NOT EXISTS handler_detail_id TEXT REFERENCES details(id) ON DELETE SET NULL`);
 
 
   // Receipts: money coming into cashbox (normalized header+items per OpenAPI)
@@ -601,6 +629,9 @@ await p.query(`ALTER TABLE IF EXISTS bank_accounts ADD COLUMN IF NOT EXISTS hand
   // Link receipts to journals for document generation
   await p.query(`ALTER TABLE IF EXISTS receipts ADD COLUMN IF NOT EXISTS journal_id TEXT REFERENCES journals(id) ON DELETE SET NULL`);
   await p.query(`CREATE INDEX IF NOT EXISTS idx_receipts_journal ON receipts(journal_id)`);
+  // Link payments to journals for document generation
+  await p.query(`ALTER TABLE IF EXISTS payments ADD COLUMN IF NOT EXISTS journal_id TEXT REFERENCES journals(id) ON DELETE SET NULL`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_payments_journal ON payments(journal_id)`);
 
   /* moved receipt_items table creation below checks to satisfy FK dependency */
 
@@ -625,6 +656,13 @@ await p.query(`ALTER TABLE IF EXISTS bank_accounts ADD COLUMN IF NOT EXISTS hand
   await p.query(`CREATE INDEX IF NOT EXISTS idx_payments_date ON payments(date)`);
   await p.query(`CREATE INDEX IF NOT EXISTS idx_payments_fiscal_year ON payments(fiscal_year_id)`);
   await p.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_payments_fiscal_number ON payments(fiscal_year_id, number) WHERE number IS NOT NULL`);
+
+  /**
+   * addHeaderCashboxToPayments
+   * Adds header-level cashbox linkage to normalized payments table and index for lookups.
+   */
+  await p.query(`ALTER TABLE IF EXISTS payments ADD COLUMN IF NOT EXISTS cashbox_id TEXT REFERENCES cashboxes(id) ON DELETE RESTRICT`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_payments_cashbox ON payments(cashbox_id)`);
 
   /* moved payment_items table creation below checks to satisfy FK dependency */
   /* moved payment_items indexes and constraint updates below to follow table creation */
@@ -743,26 +781,9 @@ await p.query(`ALTER TABLE IF EXISTS bank_accounts ADD COLUMN IF NOT EXISTS hand
   // Add Sayadi code field to checks and checkbooks
   await p.query(`ALTER TABLE IF EXISTS checks ADD COLUMN IF NOT EXISTS sayadi_code TEXT`);
   await p.query(`ALTER TABLE IF EXISTS checkbooks ADD COLUMN IF NOT EXISTS sayadi_code TEXT`);
-
-  // Instrument links: polymorphic link to card_reader, bank_account, or check
-  await p.query(`
-    CREATE TABLE IF NOT EXISTS instrument_links (
-      id TEXT PRIMARY KEY,
-      instrument_type TEXT NOT NULL CHECK (instrument_type IN ('card','transfer','check')),
-      check_id TEXT REFERENCES checks(id) ON DELETE RESTRICT,
-      card_reader_id TEXT REFERENCES card_readers(id) ON DELETE RESTRICT,
-      bank_account_id TEXT REFERENCES bank_accounts(id) ON DELETE RESTRICT,
-      created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-      CONSTRAINT instrument_links_only_one CHECK (
-        (instrument_type='check' AND check_id IS NOT NULL AND card_reader_id IS NULL AND bank_account_id IS NULL)
-        OR (instrument_type='card' AND card_reader_id IS NOT NULL AND check_id IS NULL AND bank_account_id IS NULL)
-        OR (instrument_type='transfer' AND bank_account_id IS NOT NULL AND check_id IS NULL AND card_reader_id IS NULL)
-      )
-    );
-  `);
-  await p.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_instrument_links_check ON instrument_links(check_id) WHERE check_id IS NOT NULL`);
-  await p.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_instrument_links_card ON instrument_links(card_reader_id) WHERE card_reader_id IS NOT NULL`);
-  await p.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_instrument_links_bank ON instrument_links(bank_account_id) WHERE bank_account_id IS NOT NULL`);
+  // Link incoming checks to current cashbox (for filtering/auto-populating)
+  await p.query(`ALTER TABLE IF EXISTS checks ADD COLUMN IF NOT EXISTS cashbox_id TEXT REFERENCES cashboxes(id) ON DELETE SET NULL`);
+  await p.query(`CREATE INDEX IF NOT EXISTS idx_checks_cashbox ON checks(cashbox_id)`);
 
   // Receipt items: moved here after checks and card_readers exist
   await p.query(`
@@ -777,65 +798,13 @@ await p.query(`ALTER TABLE IF EXISTS bank_accounts ADD COLUMN IF NOT EXISTS hand
     );
   `);
   await p.query(`CREATE INDEX IF NOT EXISTS idx_receipt_items_receipt ON receipt_items(receipt_id)`);
+  // Ensure direct instrument columns exist (replacing instrument_links)
+  await p.query(`ALTER TABLE IF EXISTS receipt_items ADD COLUMN IF NOT EXISTS bank_account_id TEXT REFERENCES bank_accounts(id) ON DELETE SET NULL`);
   await p.query(`ALTER TABLE IF EXISTS receipt_items ADD COLUMN IF NOT EXISTS card_reader_id TEXT REFERENCES card_readers(id) ON DELETE SET NULL`);
-
-  // Add new polymorphic linkage column to receipt_items
-  await p.query(`ALTER TABLE IF EXISTS receipt_items ADD COLUMN IF NOT EXISTS related_instrument_id TEXT REFERENCES instrument_links(id) ON DELETE SET NULL`);
-  await p.query(`CREATE INDEX IF NOT EXISTS idx_receipt_items_related_instrument ON receipt_items(related_instrument_id)`);
-
-  // Backfill related_instrument_id from legacy specific columns (card_reader_id, bank_account_id, check_id)
-  try {
-    const rows = await p.query(
-      `SELECT id, instrument_type, bank_account_id, card_reader_id, check_id
-       FROM receipt_items
-       WHERE related_instrument_id IS NULL
-         AND instrument_type IN ('card','transfer','check')`
-    );
-    for (const r of rows.rows || []) {
-      const itemId = String(r.id);
-      const inst = String(r.instrument_type || '').toLowerCase();
-      let linkId: string | null = null;
-      if (inst === 'check' && r.check_id) {
-        const ex = await p.query(`SELECT id FROM instrument_links WHERE instrument_type='check' AND check_id=$1 LIMIT 1`, [String(r.check_id)]);
-        if (ex.rowCount && ex.rows[0]?.id) {
-          linkId = String(ex.rows[0].id);
-        } else {
-          linkId = randomUUID();
-          await p.query(
-            `INSERT INTO instrument_links (id, instrument_type, check_id) VALUES ($1,'check',$2)`,
-            [linkId, String(r.check_id)]
-          );
-        }
-      } else if (inst === 'card' && r.card_reader_id) {
-        const ex = await p.query(`SELECT id FROM instrument_links WHERE instrument_type='card' AND card_reader_id=$1 LIMIT 1`, [String(r.card_reader_id)]);
-        if (ex.rowCount && ex.rows[0]?.id) {
-          linkId = String(ex.rows[0].id);
-        } else {
-          linkId = randomUUID();
-          await p.query(
-            `INSERT INTO instrument_links (id, instrument_type, card_reader_id) VALUES ($1,'card',$2)`,
-            [linkId, String(r.card_reader_id)]
-          );
-        }
-      } else if (inst === 'transfer' && r.bank_account_id) {
-        const ex = await p.query(`SELECT id FROM instrument_links WHERE instrument_type='transfer' AND bank_account_id=$1 LIMIT 1`, [String(r.bank_account_id)]);
-        if (ex.rowCount && ex.rows[0]?.id) {
-          linkId = String(ex.rows[0].id);
-        } else {
-          linkId = randomUUID();
-          await p.query(
-            `INSERT INTO instrument_links (id, instrument_type, bank_account_id) VALUES ($1,'transfer',$2)`,
-            [linkId, String(r.bank_account_id)]
-          );
-        }
-      }
-      if (linkId) {
-        await p.query(`UPDATE receipt_items SET related_instrument_id=$1 WHERE id=$2`, [linkId, itemId]);
-      }
-    }
-  } catch (e: any) {
-    console.warn('Backfill related_instrument_id skipped or failed:', e?.message || e);
-  }
+  await p.query(`ALTER TABLE IF EXISTS receipt_items ADD COLUMN IF NOT EXISTS check_id TEXT REFERENCES checks(id) ON DELETE SET NULL`);
+  // Drop polymorphic linkage if present
+  await p.query(`ALTER TABLE IF EXISTS receipt_items DROP COLUMN IF EXISTS related_instrument_id`);
+  await p.query(`DROP INDEX IF EXISTS idx_receipt_items_related_instrument`);
 
   // Add unified reference column to receipt_items and backfill from legacy card_ref/transfer_ref
   await p.query(`ALTER TABLE IF EXISTS receipt_items ADD COLUMN IF NOT EXISTS reference TEXT`);
@@ -859,12 +828,6 @@ await p.query(`ALTER TABLE IF EXISTS bank_accounts ADD COLUMN IF NOT EXISTS hand
   await p.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_receipt_items_reference ON receipt_items(reference) WHERE reference IS NOT NULL`);
   await p.query('ALTER TABLE IF EXISTS receipt_items DROP COLUMN IF EXISTS card_ref');
   await p.query('ALTER TABLE IF EXISTS receipt_items DROP COLUMN IF EXISTS transfer_ref');
-
-  // Drop legacy specific ID columns and related indexes
-  await p.query(`ALTER TABLE IF EXISTS receipt_items DROP COLUMN IF EXISTS bank_account_id`);
-  await p.query(`ALTER TABLE IF EXISTS receipt_items DROP COLUMN IF EXISTS card_reader_id`);
-  await p.query(`ALTER TABLE IF EXISTS receipt_items DROP COLUMN IF EXISTS check_id`);
-  await p.query(`DROP INDEX IF EXISTS idx_receipt_items_bank`);
 
   // Backfill receipts.cashbox_id from existing receipt_items prior to item column removal
   // This block is idempotent and will skip if legacy item-level columns are absent.
@@ -937,11 +900,20 @@ await p.query(`ALTER TABLE IF EXISTS bank_accounts ADD COLUMN IF NOT EXISTS hand
   // Add handler_detail_id to card_readers for linking to Details
   await p.query(`ALTER TABLE IF EXISTS card_readers ADD COLUMN IF NOT EXISTS handler_detail_id TEXT REFERENCES details(id) ON DELETE SET NULL`);
 
-  // Payment items post-creation adjustments and indexing
+  // Ensure direct instrument columns exist and do not get dropped
+  /**
+   * Ensure payment_items has direct instrument columns for transfer and check.
+   * Note (FA): ستون‌های مستقیم بانک و چک به جدول آیتم‌های پرداخت افزوده می‌شوند.
+   */
+  await p.query(`ALTER TABLE IF EXISTS payment_items ADD COLUMN IF NOT EXISTS bank_account_id TEXT REFERENCES bank_accounts(id) ON DELETE SET NULL`);
+  await p.query(`ALTER TABLE IF EXISTS payment_items ADD COLUMN IF NOT EXISTS check_id TEXT REFERENCES checks(id) ON DELETE SET NULL`);
+  
+  /**
+   * Remove card_reader_id from payment_items; card payments are not used for payments.
+   * Note (FA): ستون card_reader_id از payment_items حذف شد؛ پرداخت کارت در پرداخت‌ها پشتیبانی نمی‌شود.
+   */
   await p.query(`ALTER TABLE IF EXISTS payment_items DROP COLUMN IF EXISTS card_reader_id`);
-  await p.query(`ALTER TABLE IF EXISTS payment_items DROP COLUMN IF EXISTS card_ref`);
-  await p.query(`ALTER TABLE IF EXISTS payment_items DROP COLUMN IF EXISTS destination_type`);
-  await p.query(`ALTER TABLE IF EXISTS payment_items DROP COLUMN IF EXISTS destination_id`);
+
   await p.query(`CREATE INDEX IF NOT EXISTS idx_payment_items_payment ON payment_items(payment_id)`);
   await p.query(`ALTER TABLE IF EXISTS payment_items DROP CONSTRAINT IF EXISTS payment_items_instrument_type_check`);
   await p.query(`ALTER TABLE IF EXISTS payment_items ADD CONSTRAINT payment_items_instrument_type_check CHECK (instrument_type IN ('cash','card','transfer','check','checkin'))`);
@@ -955,6 +927,12 @@ await p.query(`ALTER TABLE IF EXISTS bank_accounts ADD COLUMN IF NOT EXISTS hand
   }
   await p.query('ALTER TABLE IF EXISTS payment_items DROP COLUMN IF EXISTS transfer_ref');
   await p.query(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_payment_items_reference ON payment_items(reference) WHERE reference IS NOT NULL`);
+
+  // Remove polymorphic related_instrument_id if exists; keep direct columns
+  await p.query(`ALTER TABLE IF EXISTS payment_items DROP COLUMN IF EXISTS related_instrument_id`);
+
+  // Finally drop instrument_links table entirely (deprecated polymorphic link table)
+  await p.query('DROP TABLE IF EXISTS instrument_links CASCADE');
 
   // Useful indexes for reporting and lookups
   await p.query(`CREATE INDEX IF NOT EXISTS idx_treasury_receipts_cashbox ON treasury_receipts(cashbox_id)`);
@@ -988,7 +966,7 @@ await p.query(`ALTER TABLE IF EXISTS bank_accounts ADD COLUMN IF NOT EXISTS hand
         NULL;
     END $$;`);
   } catch {}
-  await p.query(`ALTER TABLE IF EXISTS checks ADD CONSTRAINT chk_checks_status CHECK (status IN ('created','issued','incashbox','deposited','cleared','returned'))`);
+  await p.query(`ALTER TABLE IF EXISTS checks ADD CONSTRAINT chk_checks_status CHECK (status IN ('created','issued','incashbox','spent','deposited','cleared','returned'))`);
 
   await p.query(`CREATE INDEX IF NOT EXISTS idx_checkbooks_bank_account ON checkbooks(bank_account_id)`);
   await p.query(`CREATE INDEX IF NOT EXISTS idx_card_readers_bank_account ON card_readers(bank_account_id)`);
@@ -1075,7 +1053,40 @@ export async function findRefreshToken(token: string): Promise<{ token: string; 
 
 /** Ping Postgres connectivity for health checks. */
 export async function ping(): Promise<{ ok: boolean; driver: 'postgres'; info?: any }>{
+  /**
+   * Returns connectivity status and key DB info for debugging:
+   * - ok: driver connectivity check
+   * - driver: 'postgres'
+   * - info: { database, user, host, schema, search_path }
+   * This helps confirm writes target the intended database and schema.
+   */
   const p = getPool();
   const res = await p.query('SELECT 1 AS ok');
-  return { ok: res.rows[0].ok === 1, driver: 'postgres' };
+  // Fetch database name and current user from server
+  const dbInfo = await p.query('SELECT current_database() AS database, current_user AS user');
+  // Fetch search_path to see which schema the connection uses
+  const searchPathRes = await p.query('SHOW search_path');
+  const database = dbInfo.rows?.[0]?.database || null;
+  const user = dbInfo.rows?.[0]?.user || null;
+  const search_path = searchPathRes.rows?.[0]?.search_path || null;
+  // Parse host from env connection string without exposing credentials
+  const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL || '';
+  let host: string | null = null;
+  try {
+    const u = new URL(connectionString);
+    host = u.host || null;
+  } catch {
+    host = null;
+  }
+  return {
+    ok: res.rows[0].ok === 1,
+    driver: 'postgres',
+    info: {
+      database,
+      user,
+      host,
+      schema: DEFAULT_SCHEMA,
+      search_path,
+    },
+  };
 }

@@ -53,25 +53,57 @@ async function getOrCreateInstrumentLink(p, instrumentType, sourceId) {
  * markIncomingChecksInCashbox
  * Given a receipt id, finds all incoming checks referenced by its items
  * and updates their status from 'created' to 'incashbox' (stored in cashbox).
+ * Also assigns the receipt's `cashbox_id` onto the checks for filtering.
  * It only affects non-checkbook incoming checks with status 'created'.
- * Notes (FA): وضعیت چک‌های دریافتی از 'ایجاد شده' به 'در صندوق' تغییر می‌کند.
+ * Notes (FA): وضعیت چک‌های دریافتی از 'ایجاد شده' به 'در صندوق' تغییر می‌کند و صندوق مربوطه ثبت می‌شود.
  */
 async function markIncomingChecksInCashbox(p, receiptId) {
-    const list = await p.query(`SELECT il.check_id AS id
+    // Fetch cashbox assigned to the receipt to propagate onto checks
+    const rc = await p.query(`SELECT cashbox_id FROM receipts WHERE id = $1 LIMIT 1`, [receiptId]);
+    const cashboxId = rc.rows?.[0]?.cashbox_id ? String(rc.rows[0].cashbox_id) : null;
+    const list = await p.query(`SELECT ri.check_id AS id
        FROM receipt_items ri
-       LEFT JOIN instrument_links il ON il.id = ri.related_instrument_id
       WHERE ri.receipt_id = $1
         AND ri.instrument_type = 'check'
-        AND il.check_id IS NOT NULL`, [receiptId]);
+        AND ri.check_id IS NOT NULL`, [receiptId]);
     const ids = (list.rows || []).map((r) => String(r.id)).filter(Boolean);
     if (!ids.length)
         return;
     await p.query(`UPDATE checks
-        SET status = 'incashbox'
+        SET status = 'incashbox', cashbox_id = $2
       WHERE id = ANY($1)
         AND type = 'incoming'
         AND checkbook_id IS NULL
-        AND (status = 'created' OR status IS NULL)`, [ids]);
+        AND (status = 'created' OR status IS NULL)`, [ids, cashboxId]);
+}
+/**
+ * revertIncomingChecksRemovedFromReceipt
+ * Revert incoming checks removed from a receipt back to 'created'.
+ * This considers verification history via 'incashbox' status set when a check
+ * was previously verified/stored by a receipt. We only revert when the check is
+ * no longer referenced by any receipt item across the system and its status is 'incashbox'.
+ * Notes (FA): هنگامی که آیتم چک از رسید حذف و ذخیره می‌شود، اگر چک قبلاً در صندوق
+ * ثبت (incashbox) شده و دیگر در هیچ آیتم رسیدی ارجاع ندارد، وضعیت آن به 'ایجاد شده' برگردانده می‌شود.
+ */
+async function revertIncomingChecksRemovedFromReceipt(p, receiptId, prevCheckIds, newCheckIds) {
+    const prev = new Set(prevCheckIds.map(String));
+    for (const nid of newCheckIds)
+        prev.delete(String(nid));
+    const deletedIds = Array.from(prev);
+    if (!deletedIds.length)
+        return;
+    for (const cid of deletedIds) {
+        // If no receipt items reference this check anymore, revert status
+        const ref = await p.query(`SELECT COUNT(1) AS cnt FROM receipt_items WHERE check_id = $1`, [cid]);
+        const cnt = Number(ref.rows?.[0]?.cnt || 0);
+        if (cnt === 0) {
+            await p.query(`UPDATE checks SET status='created', cashbox_id=NULL
+           WHERE id=$1
+             AND type='incoming'
+             AND checkbook_id IS NULL
+             AND status='incashbox'`, [cid]);
+        }
+    }
 }
 /**
  * resolveCodeIdFromEnv
@@ -122,6 +154,48 @@ async function resolveCodeIdFromEnv(p, varName, defaultCode) {
     throw new Error(`Missing code mapping for ${varName}`);
 }
 /**
+ * resolveNumericSetting
+ * Reads a numeric configuration value from the `settings` table by `code`.
+ * - If settings row exists, attempts to parse integer from `value` (supports raw number, numeric string, or object with `code`/`value`/`start`)
+ * - Otherwise falls back to environment variable `envName`
+ * - Finally falls back to provided `def` value
+ */
+async function resolveNumericSetting(p, code, envName, def) {
+    try {
+        const r = await p.query(`SELECT value FROM settings WHERE code = $1 LIMIT 1`, [code]);
+        if (r.rowCount) {
+            const v = r.rows[0]?.value;
+            const parseCandidate = (src) => {
+                if (src == null)
+                    return null;
+                if (typeof src === 'number')
+                    return Number.isFinite(src) ? Math.floor(src) : null;
+                if (typeof src === 'string') {
+                    const n = parseInt(src.trim(), 10);
+                    return Number.isFinite(n) ? n : null;
+                }
+                if (typeof src === 'object') {
+                    const s = (src.code ?? src.value ?? src.start);
+                    if (s != null) {
+                        const n = parseInt(String(s).trim(), 10);
+                        return Number.isFinite(n) ? n : null;
+                    }
+                }
+                return null;
+            };
+            const num = parseCandidate(v);
+            if (num != null)
+                return num;
+        }
+    }
+    catch { }
+    const raw = process.env[envName];
+    const envNum = parseInt(String(raw ?? ''), 10);
+    if (Number.isFinite(envNum))
+        return envNum;
+    return def;
+}
+/**
  * GET /banks
  * List available banks from database.
  * Returns bank name, branch number, branch name, and city.
@@ -148,12 +222,9 @@ exports.treasuryRouter.get('/cashboxes/next-code', async (req, res) => {
     const lang = req.lang || 'en';
     try {
         const p = (0, pg_1.getPool)();
-        // Read starting code from environment; fallback to 6000 when unset/invalid
-        const envStartRaw = process.env.CASHBOX_START_CODE;
-        const envStartNum = parseInt(String(envStartRaw ?? ''), 10);
-        const configuredStart = Number.isFinite(envStartNum) && envStartNum >= 1000 && envStartNum <= 9999
-            ? envStartNum
-            : 6000;
+        // Read starting code from settings, fallback to env, then 6000
+        const configuredStartRaw = await resolveNumericSetting(p, 'VITE_CASHBOX_START_CODE', 'CASHBOX_START_CODE', 6000);
+        const configuredStart = Math.min(9999, Math.max(1000, configuredStartRaw));
         // Find highest 4-digit numeric code in cashboxes
         const maxRes = await p.query(`SELECT code FROM cashboxes WHERE code ~ '^[0-9]{4}$' ORDER BY code::int DESC LIMIT 1`);
         const start = maxRes.rowCount
@@ -392,8 +463,8 @@ exports.treasuryRouter.post('/bank-accounts', async (req, res) => {
          * - Naturally continues past 6199 to 6200, etc.; enforces 4-digit range
          */
         async function computeNextBankDetailCode() {
-            const start = Number(process.env.BANK_DETAIL_START_CODE ?? '6100');
-            const minStart = Number.isFinite(start) && start > 0 ? Math.floor(start) : 6100;
+            const startRaw = await resolveNumericSetting(p, 'VITE_BANK_DETAIL_START_CODE', 'BANK_DETAIL_START_CODE', 6100);
+            const minStart = Math.min(9999, Math.max(1000, startRaw));
             // Compute next code based on previous bank account detail code, starting at env value (e.g., 6100).
             // Skip any codes already occupied by other Details rows.
             const prevRes = await p.query(`SELECT MAX(d.code::int) AS prev
@@ -1079,6 +1150,8 @@ exports.treasuryRouter.delete('/card-readers/:id', async (req, res) => {
  * Supports optional filters:
  * - available=true: exclude checks already referenced by receipt_items (used in other receipts)
  * - exclude_receipt_id=<id>: when available=true, include checks used in the specified receipt id (editing case)
+ * - status=<status>: filter by check status (e.g., 'incashbox')
+ * - cashbox_id=<id>: filter by cashbox assignment for incoming checks
  */
 exports.treasuryRouter.get('/checks', async (req, res) => {
     const lang = req.lang || 'en';
@@ -1087,10 +1160,12 @@ exports.treasuryRouter.get('/checks', async (req, res) => {
         return res.status(400).json({ ok: false, error: 'Only incoming supported' });
     const availableOnly = String(req.query.available || 'false').toLowerCase() === 'true';
     const excludeReceiptId = req.query.exclude_receipt_id ? String(req.query.exclude_receipt_id) : null;
+    const statusFilter = req.query.status ? String(req.query.status) : null;
+    const cashboxIdFilter = req.query.cashbox_id ? String(req.query.cashbox_id) : null;
     try {
         const p = (0, pg_1.getPool)();
         let sql = `SELECT checks.id, checks.type, checks.number, checks.bank_name, checks.issuer, checks.beneficiary_detail_id,
-                      checks.issue_date, checks.due_date, checks.amount, checks.status, checks.notes, checks.created_at,
+                      checks.issue_date, checks.due_date, checks.amount, checks.status, checks.notes, checks.created_at, checks.cashbox_id,
                       d.code AS beneficiary_detail_code, d.title AS beneficiary_detail_title
                FROM checks
                LEFT JOIN details d ON d.id = checks.beneficiary_detail_id
@@ -1099,11 +1174,22 @@ exports.treasuryRouter.get('/checks', async (req, res) => {
         if (availableOnly) {
             sql += ` AND NOT EXISTS (
                  SELECT 1 FROM receipt_items ri
-                 LEFT JOIN instrument_links il ON il.id = ri.related_instrument_id
-                  WHERE il.check_id = checks.id
+                  WHERE ri.check_id = checks.id
                     AND ($1::TEXT IS NULL OR ri.receipt_id <> $1::TEXT)
                )`;
             params.push(excludeReceiptId);
+        }
+        // Dynamic filters using incremental parameter positions
+        let paramIndex = params.length + 1;
+        if (statusFilter) {
+            sql += ` AND checks.status = $${paramIndex}`;
+            params.push(statusFilter);
+            paramIndex++;
+        }
+        if (cashboxIdFilter) {
+            sql += ` AND checks.cashbox_id = $${paramIndex}`;
+            params.push(cashboxIdFilter);
+            paramIndex++;
         }
         sql += ` ORDER BY checks.issue_date DESC, checks.created_at DESC LIMIT 100`;
         const { rows } = await p.query(sql, params);
@@ -1206,6 +1292,7 @@ exports.treasuryRouter.get('/checkbooks/:id/checks', async (req, res) => {
             sql += ` AND NOT EXISTS (
                  SELECT 1 FROM payment_items pi
                   WHERE pi.check_id = c.id
+                    AND pi.instrument_type = 'check'
                     AND ($3::TEXT IS NULL OR pi.payment_id <> $3::TEXT)
                )`;
             params.push(excludePaymentId);
@@ -1799,19 +1886,8 @@ exports.treasuryRouter.post('/receipts', async (req, res) => {
             const checkId = it?.checkId ? String(it.checkId) : null;
             const position = it?.position != null ? Number(it.position) : pos;
             pos++;
-            // Resolve the unified instrument link id for polymorphic relations
-            let relatedInstrumentId = null;
-            if (inst === 'card') {
-                relatedInstrumentId = await getOrCreateInstrumentLink(p, 'card', cardReaderId);
-            }
-            else if (inst === 'transfer') {
-                relatedInstrumentId = await getOrCreateInstrumentLink(p, 'transfer', bankAccountId);
-            }
-            else if (inst === 'check') {
-                relatedInstrumentId = await getOrCreateInstrumentLink(p, 'check', checkId);
-            }
-            await p.query(`INSERT INTO receipt_items (id, receipt_id, instrument_type, amount, reference, related_instrument_id, position)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`, [iid, id, inst, amount, reference, relatedInstrumentId, position]);
+            await p.query(`INSERT INTO receipt_items (id, receipt_id, instrument_type, amount, reference, bank_account_id, card_reader_id, check_id, position)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [iid, id, inst, amount, reference, bankAccountId, cardReaderId, checkId, position]);
         }
         // Update incoming checks status to 'incashbox' when saved
         await markIncomingChecksInCashbox(p, id);
@@ -1819,9 +1895,8 @@ exports.treasuryRouter.post('/receipts', async (req, res) => {
         // Fetch the created receipt in camelCase shape
         const hr = await p.query(`SELECT id, number, status, date, fiscal_year_id, detail_id, special_code_id, description, total_amount, cashbox_id
        FROM receipts WHERE id = $1 LIMIT 1`, [id]);
-        const ir = await p.query(`SELECT ri.id, ri.instrument_type, ri.amount, il.bank_account_id, il.card_reader_id, ri.reference, il.check_id, ri.position
+        const ir = await p.query(`SELECT ri.id, ri.instrument_type, ri.amount, ri.bank_account_id, ri.card_reader_id, ri.reference, ri.check_id, ri.position
        FROM receipt_items ri
-       LEFT JOIN instrument_links il ON il.id = ri.related_instrument_id
        WHERE ri.receipt_id = $1
        ORDER BY COALESCE(ri.position, 0) ASC, ri.created_at ASC`, [id]);
         const itemsOut = (ir.rows || []).map((r) => ({
@@ -1934,6 +2009,13 @@ exports.treasuryRouter.put('/receipts/:id', async (req, res) => {
         }
         await p.query(`UPDATE receipts SET number=$2, status=$3, date=$4, fiscal_year_id=$5, detail_id=$6, special_code_id=$7, description=$8, total_amount=$9, cashbox_id=$10
        WHERE id=$1`, [id, numberFinal, status, date, fiscalYearId, detailId, specialCodeId, description, totalItems, cashboxIdHeader]);
+        // Snapshot previous checks linked to this receipt before items are replaced
+        const prevCheckRows = await p.query(`SELECT ri.check_id AS id
+         FROM receipt_items ri
+        WHERE ri.receipt_id = $1
+          AND ri.instrument_type = 'check'
+          AND ri.check_id IS NOT NULL`, [id]);
+        const prevCheckIds = (prevCheckRows.rows || []).map((r) => String(r.id)).filter(Boolean);
         await p.query(`DELETE FROM receipt_items WHERE receipt_id=$1`, [id]);
         let pos = 1;
         for (const it of items) {
@@ -1946,29 +2028,22 @@ exports.treasuryRouter.put('/receipts/:id', async (req, res) => {
             const checkId = it?.checkId ? String(it.checkId) : null;
             const position = it?.position != null ? Number(it.position) : pos;
             pos++;
-            // Resolve the unified instrument link id for polymorphic relations
-            let relatedInstrumentId = null;
-            if (inst === 'card') {
-                relatedInstrumentId = await getOrCreateInstrumentLink(p, 'card', cardReaderId);
-            }
-            else if (inst === 'transfer') {
-                relatedInstrumentId = await getOrCreateInstrumentLink(p, 'transfer', bankAccountId);
-            }
-            else if (inst === 'check') {
-                relatedInstrumentId = await getOrCreateInstrumentLink(p, 'check', checkId);
-            }
-            await p.query(`INSERT INTO receipt_items (id, receipt_id, instrument_type, amount, reference, related_instrument_id, position)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`, [iid, id, inst, amount, reference, relatedInstrumentId, position]);
+            await p.query(`INSERT INTO receipt_items (id, receipt_id, instrument_type, amount, reference, bank_account_id, card_reader_id, check_id, position)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [iid, id, inst, amount, reference, bankAccountId, cardReaderId, checkId, position]);
         }
         // Update incoming checks status to 'incashbox' when saved
+        const newCheckIds = items
+            .filter((it) => String(it?.instrumentType || '').toLowerCase() === 'check' && it?.checkId)
+            .map((it) => String(it.checkId));
         await markIncomingChecksInCashbox(p, id);
+        // Revert status back to 'created' for checks removed from this receipt
+        await revertIncomingChecksRemovedFromReceipt(p, id, prevCheckIds, newCheckIds);
         await p.query('COMMIT');
         // Fetch the updated receipt in camelCase shape
         const hr = await p.query(`SELECT id, number, status, date, fiscal_year_id, detail_id, special_code_id, description, total_amount, cashbox_id
        FROM receipts WHERE id = $1 LIMIT 1`, [id]);
-        const ir = await p.query(`SELECT ri.id, ri.instrument_type, ri.amount, il.bank_account_id, il.card_reader_id, ri.reference, il.check_id, ri.position
+        const ir = await p.query(`SELECT ri.id, ri.instrument_type, ri.amount, ri.bank_account_id, ri.card_reader_id, ri.reference, ri.check_id, ri.position
        FROM receipt_items ri
-       LEFT JOIN instrument_links il ON il.id = ri.related_instrument_id
        WHERE ri.receipt_id = $1
        ORDER BY COALESCE(ri.position, 0) ASC, ri.created_at ASC`, [id]);
         const itemsOut = (ir.rows || []).map((r) => ({
@@ -2049,9 +2124,8 @@ exports.treasuryRouter.get('/receipts/:id', async (req, res) => {
        LIMIT 1`, [id]);
         if (!hr.rows[0])
             return res.status(404).json({ ok: false, error: (0, i18n_1.t)('treasury.receipts.notFound', lang) });
-        const ir = await p.query(`SELECT ri.id, ri.instrument_type, ri.amount, il.bank_account_id, il.card_reader_id, ri.reference, il.check_id, ri.position
+        const ir = await p.query(`SELECT ri.id, ri.instrument_type, ri.amount, ri.bank_account_id, ri.card_reader_id, ri.reference, ri.check_id, ri.position
        FROM receipt_items ri
-       LEFT JOIN instrument_links il ON il.id = ri.related_instrument_id
        WHERE ri.receipt_id = $1
        ORDER BY COALESCE(ri.position, 0) ASC, ri.created_at ASC`, [id]);
         const items = (ir.rows || []).map((r) => ({
@@ -2133,9 +2207,8 @@ exports.treasuryRouter.post('/receipts/:id/post', async (req, res) => {
                 await client.query('ROLLBACK');
                 return res.status(409).json({ ok: false, error: (0, i18n_1.t)('treasury.receipts.cannotModifyPosted', lang) });
             }
-            const ir = await client.query(`SELECT ri.id, ri.instrument_type, ri.amount, il.bank_account_id, il.card_reader_id, ri.reference, il.check_id, ri.position
+            const ir = await client.query(`SELECT ri.id, ri.instrument_type, ri.amount, ri.bank_account_id, ri.card_reader_id, ri.reference, ri.check_id, ri.position
          FROM receipt_items ri
-         LEFT JOIN instrument_links il ON il.id = ri.related_instrument_id
          WHERE ri.receipt_id = $1
          ORDER BY COALESCE(ri.position, 0) ASC, ri.created_at ASC`, [id]);
             const items = ir.rows || [];
@@ -2220,8 +2293,10 @@ exports.treasuryRouter.post('/receipts/:id/post', async (req, res) => {
                 }
             }
             // Credit line for counterparty (receipt header detail)
+            // Use header-selected special code when present; fallback to settings/env.
+            const counterCodeId = r.special_code_id ?? codeCounter;
             journalItems.push({
-                code_id: codeCounter,
+                code_id: counterCodeId,
                 debit: 0,
                 credit: total,
                 detail_id: r.detail_id ?? null,
@@ -2269,19 +2344,695 @@ exports.treasuryRouter.post('/receipts/:id/post', async (req, res) => {
 /**
  * GET /payments
  * List payments (basic header fields) ordered by date desc.
+ * Returns camelCase fields and array under `data` to match frontend.
+ * Note (FA): این مسیر فهرست پرداخت‌ها را برمی‌گرداند و اکنون شناسه سند روزنامه (journalId) را نیز شامل می‌شود.
  */
 exports.treasuryRouter.get('/payments', async (req, res) => {
     const lang = req.lang || 'en';
     try {
         const p = (0, pg_1.getPool)();
-        const { rows } = await p.query(`SELECT id, number, status, date, detail_id, total_amount, fiscal_year_id, created_at
+        const { rows } = await p.query(`SELECT id, number, status, date, detail_id, total_amount, fiscal_year_id, cashbox_id, description, created_at, journal_id
        FROM payments
        ORDER BY date DESC, created_at DESC
        LIMIT 200`);
-        return res.json({ ok: true, items: rows, message: (0, i18n_1.t)('treasury.payments.list', lang) });
+        const items = (rows || []).map((r) => ({
+            id: String(r.id),
+            number: r.number ?? null,
+            status: String(r.status || '').toLowerCase() === 'temporary' ? 'draft' : (String(r.status || '').toLowerCase() === 'permanent' ? 'posted' : r.status),
+            date: r.date,
+            fiscalYearId: r.fiscal_year_id ?? null,
+            detailId: r.detail_id ?? null,
+            description: r.description ?? null,
+            totalAmount: Number(r.total_amount || 0),
+            cashboxId: r.cashbox_id ?? null,
+            journalId: r.journal_id ?? null,
+            items: [],
+        }));
+        return res.json({ ok: true, data: items, message: (0, i18n_1.t)('treasury.payments.list', lang) });
     }
     catch (e) {
         return res.status(500).json({ ok: false, error: e?.message || 'Error' });
+    }
+});
+/**
+ * POST /payments
+ * Creates a draft payment (header + items) using direct instrument columns.
+ * - 'transfer': store `bank_account_id` and optional `reference`.
+ * - 'card': store `card_reader_id`.
+ * - 'check' and 'checkin': store `check_id`; 'checkin' marks incashbox checks as 'spent'.
+ * - Outgoing 'check' items mark corresponding checks as 'spent'.
+ * Note (FA): در این مسیر، پرداخت با ستون‌های مستقیم ابزار ذخیره می‌شود و وضعیت چک‌ها بر اساس نوع به‌روز می‌گردد.
+ */
+exports.treasuryRouter.post('/payments', async (req, res) => {
+    const lang = req.lang || 'en';
+    const payload = req.body || {};
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) {
+        return res.status(400).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.missingItems', lang) });
+    }
+    const totalClient = Number(payload.totalAmount ?? items.reduce((s, it) => s + Number(it?.amount || 0), 0));
+    const totalItems = items.reduce((sum, it) => sum + Number(it?.amount || 0), 0);
+    if (Number(totalClient) !== Number(totalItems)) {
+        return res.status(400).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.invalidTotal', lang) });
+    }
+    const date = payload.date ? new Date(payload.date) : new Date();
+    if (Number.isNaN(date.getTime())) {
+        return res.status(400).json({ ok: false, error: (0, i18n_1.t)('error.invalidInput', lang) });
+    }
+    const mapStatus = (s) => {
+        const v = String(s || '').toLowerCase();
+        if (v === 'draft')
+            return 'temporary';
+        if (v === 'posted')
+            return 'permanent';
+        if (v === 'temporary' || v === 'permanent')
+            return v;
+        return 'temporary';
+    };
+    const status = mapStatus(payload.status);
+    const fiscalYearId = payload.fiscalYearId ? String(payload.fiscalYearId) : null;
+    const detailId = payload.detailId ? String(payload.detailId) : null;
+    const specialCodeId = payload.specialCodeId ? String(payload.specialCodeId) : null;
+    const description = payload.description != null ? String(payload.description) : null;
+    const number = payload.number != null ? String(payload.number) : null;
+    const cashboxIdHeader = payload.cashboxId ? String(payload.cashboxId) : null;
+    const allowed = new Set(['cash', 'transfer', 'check', 'checkin']);
+    for (const it of items) {
+        const inst = String(it?.instrumentType || '').toLowerCase();
+        if (!allowed.has(inst)) {
+            return res.status(400).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.invalidInstrument', lang) });
+        }
+    }
+    const needsCashbox = items.some((it) => {
+        const inst = String(it?.instrumentType || '').toLowerCase();
+        return inst === 'cash' || inst === 'checkin';
+    });
+    if (needsCashbox && !cashboxIdHeader) {
+        return res.status(400).json({ ok: false, error: (0, i18n_1.t)('treasury.receipts.cashboxRequired', lang) });
+    }
+    try {
+        const p = (0, pg_1.getPool)();
+        const client = await p.connect();
+        try {
+            await client.query('BEGIN');
+            // Auto-generate sequential number if not provided.
+            let numberFinal = number;
+            if (!numberFinal) {
+                const nx = await client.query(`SELECT COALESCE(MAX(CASE WHEN number ~ '^\\d+$' THEN CAST(number AS INTEGER) ELSE NULL END), 0) + 1 AS next_number
+           FROM payments
+           WHERE ($1::text IS NULL OR fiscal_year_id = $1)`, [fiscalYearId]);
+                numberFinal = String(nx.rows?.[0]?.next_number || 1);
+            }
+            const id = (0, crypto_1.randomUUID)();
+            await client.query(`INSERT INTO payments (id, number, status, date, fiscal_year_id, detail_id, special_code_id, description, total_amount, cashbox_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [id, numberFinal, status, date, fiscalYearId, detailId, specialCodeId, description, totalItems, cashboxIdHeader]);
+            let pos = 1;
+            for (const it of items) {
+                const iid = (0, crypto_1.randomUUID)();
+                const inst = String(it?.instrumentType || '').toLowerCase();
+                const amount = Number(it?.amount || 0);
+                const reference = it?.reference != null ? String(it.reference) : null;
+                const position = it?.position != null ? Number(it.position) : pos;
+                pos++;
+                const bankAccountId = it?.bankAccountId ? String(it.bankAccountId) : null;
+                const checkId = it?.checkId ? String(it.checkId) : null;
+                await client.query(`INSERT INTO payment_items (id, payment_id, instrument_type, amount, reference, bank_account_id, check_id, position)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [iid, id, inst, amount, reference, bankAccountId, checkId, position]);
+            }
+            // Mark incoming checks as 'spent' for any payment items of type 'checkin'
+            // This ensures checks used for payments exit the available incashbox pool.
+            await client.query(`UPDATE checks SET status = 'spent'
+         WHERE id IN (
+           SELECT pi.check_id
+           FROM payment_items pi
+           WHERE pi.payment_id = $1 AND pi.instrument_type = 'checkin' AND pi.check_id IS NOT NULL
+         )
+         AND status = 'incashbox'`, [id]);
+            // Mark outgoing checks as 'spent' for any payment items of type 'check'
+            await client.query(`UPDATE checks SET status = 'spent'
+         WHERE id IN (
+           SELECT pi.check_id
+           FROM payment_items pi
+           JOIN checks c ON c.id = pi.check_id
+           WHERE pi.payment_id = $1 AND pi.instrument_type = 'check' AND pi.check_id IS NOT NULL AND c.type = 'outgoing'
+         )
+         AND status <> 'spent'`, [id]);
+            await client.query('COMMIT');
+            // Fetch created payment in camelCase shape
+            const hr = await client.query(`SELECT id, number, status, date, fiscal_year_id, detail_id, special_code_id, description, total_amount, cashbox_id
+         FROM payments WHERE id = $1 LIMIT 1`, [id]);
+            const ir = await client.query(`SELECT id, instrument_type, amount, reference, bank_account_id, check_id, position
+         FROM payment_items
+         WHERE payment_id = $1
+         ORDER BY COALESCE(position, 0) ASC, created_at ASC`, [id]);
+            const itemsOut = (ir.rows || []).map((r) => ({
+                id: r.id,
+                instrumentType: r.instrument_type,
+                amount: Number(r.amount || 0),
+                reference: r.reference ?? null,
+                bankAccountId: r.bank_account_id ?? null,
+                checkId: r.check_id ?? null,
+                position: r.position ?? null,
+            }));
+            const h = hr.rows[0];
+            const item = {
+                id: String(h.id),
+                number: h.number ?? null,
+                status: String(h.status || '').toLowerCase() === 'temporary' ? 'draft' : (String(h.status || '').toLowerCase() === 'permanent' ? 'posted' : h.status),
+                date: h.date,
+                fiscalYearId: h.fiscal_year_id ?? null,
+                detailId: h.detail_id ?? null,
+                specialCodeId: h.special_code_id ?? null,
+                description: h.description ?? null,
+                cashboxId: h.cashbox_id ?? null,
+                items: itemsOut,
+            };
+            client.release();
+            return res.status(201).json({ ok: true, item, message: (0, i18n_1.t)('treasury.payments.created', lang) });
+        }
+        catch (e) {
+            try {
+                await client.query('ROLLBACK');
+            }
+            catch { }
+            client.release();
+            return res.status(500).json({ ok: false, error: e?.message || (0, i18n_1.t)('error.generic', lang) });
+        }
+    }
+    catch (e) {
+        return res.status(500).json({ ok: false, error: e?.message || (0, i18n_1.t)('error.generic', lang) });
+    }
+});
+/**
+ * PUT /payments/:id
+ * Updates a draft payment using direct instrument columns.
+ * - 'transfer': store `bank_account_id` (+ optional `reference`).
+ * - 'check' and 'checkin': store `check_id`; 'checkin' marks incashbox checks as 'spent'.
+ * - Outgoing 'check' items mark corresponding checks as 'spent'.
+ * Note (FA): در این مسیر، ویرایش پرداخت با ستون‌های مستقیم ابزار انجام می‌شود؛ کارت در پرداخت‌ها استفاده نمی‌شود و ستون آن حذف شده است.
+ */
+exports.treasuryRouter.put('/payments/:id', async (req, res) => {
+    const lang = req.lang || 'en';
+    const id = String(req.params.id || '').trim();
+    if (!id)
+        return res.status(400).json({ ok: false, error: (0, i18n_1.t)('error.invalidInput', lang) });
+    const payload = req.body || {};
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) {
+        return res.status(400).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.missingItems', lang) });
+    }
+    const totalClient = Number(payload.totalAmount ?? items.reduce((s, it) => s + Number(it?.amount || 0), 0));
+    const totalItems = items.reduce((sum, it) => sum + Number(it?.amount || 0), 0);
+    if (Number(totalClient) !== Number(totalItems)) {
+        return res.status(400).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.invalidTotal', lang) });
+    }
+    const date = payload.date ? new Date(payload.date) : new Date();
+    if (Number.isNaN(date.getTime())) {
+        return res.status(400).json({ ok: false, error: (0, i18n_1.t)('error.invalidInput', lang) });
+    }
+    const mapStatus = (s) => {
+        const v = String(s || '').toLowerCase();
+        if (v === 'draft')
+            return 'temporary';
+        if (v === 'posted')
+            return 'permanent';
+        if (v === 'temporary' || v === 'permanent')
+            return v;
+        return 'temporary';
+    };
+    const status = mapStatus(payload.status);
+    const fiscalYearId = payload.fiscalYearId ? String(payload.fiscalYearId) : null;
+    const detailId = payload.detailId ? String(payload.detailId) : null;
+    const specialCodeId = payload.specialCodeId ? String(payload.specialCodeId) : null;
+    const description = payload.description != null ? String(payload.description) : null;
+    const number = payload.number != null ? String(payload.number) : null;
+    const cashboxIdHeader = payload.cashboxId ? String(payload.cashboxId) : null;
+    const allowed = new Set(['cash', 'transfer', 'check', 'checkin']);
+    for (const it of items) {
+        const inst = String(it?.instrumentType || '').toLowerCase();
+        if (!allowed.has(inst)) {
+            return res.status(400).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.invalidInstrument', lang) });
+        }
+    }
+    const needsCashbox = items.some((it) => {
+        const inst = String(it?.instrumentType || '').toLowerCase();
+        return inst === 'cash' || inst === 'checkin';
+    });
+    if (needsCashbox && !cashboxIdHeader) {
+        return res.status(400).json({ ok: false, error: (0, i18n_1.t)('treasury.receipts.cashboxRequired', lang) });
+    }
+    try {
+        const p = (0, pg_1.getPool)();
+        const ex = await p.query(`SELECT id, status FROM payments WHERE id = $1 LIMIT 1`, [id]);
+        if (!ex.rows?.length) {
+            return res.status(404).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.notFound', lang) });
+        }
+        const currentStatus = String(ex.rows[0].status || '').toLowerCase();
+        if (currentStatus === 'permanent' || currentStatus === 'posted') {
+            return res.status(409).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.cannotModifyPosted', lang) });
+        }
+        const client = await p.connect();
+        try {
+            await client.query('BEGIN');
+            // Preserve existing number if not provided
+            let numberFinal = number;
+            if (numberFinal == null) {
+                const nx = await client.query(`SELECT number FROM payments WHERE id = $1 LIMIT 1`, [id]);
+                numberFinal = nx.rows?.[0]?.number ?? null;
+            }
+            await client.query(`UPDATE payments SET number=$2, status=$3, date=$4, fiscal_year_id=$5, detail_id=$6, special_code_id=$7, description=$8, total_amount=$9, cashbox_id=$10
+         WHERE id=$1`, [id, numberFinal, status, date, fiscalYearId, detailId, specialCodeId, description, totalItems, cashboxIdHeader]);
+            // Fetch currently associated check IDs (before delete) to detect removals
+            // Persian note (FA): برای شناسایی چک‌های حذف‌شده از پرداخت، شناسه‌های قبلی استخراج می‌شود.
+            const oldOutgoingRows = await client.query(`SELECT c.id AS id
+         FROM payment_items pi
+         JOIN checks c ON c.id = pi.check_id
+         WHERE pi.payment_id = $1 AND pi.instrument_type = 'check' AND pi.check_id IS NOT NULL AND c.type = 'outgoing'`, [id]);
+            const oldIncomingRows = await client.query(`SELECT c.id AS id
+         FROM payment_items pi
+         JOIN checks c ON c.id = pi.check_id
+         WHERE pi.payment_id = $1 AND pi.instrument_type = 'checkin' AND pi.check_id IS NOT NULL AND c.type = 'incoming'`, [id]);
+            const oldOutgoingIds = (oldOutgoingRows.rows || []).map((r) => String(r.id));
+            const oldIncomingIds = (oldIncomingRows.rows || []).map((r) => String(r.id));
+            await client.query(`DELETE FROM payment_items WHERE payment_id=$1`, [id]);
+            let pos = 1;
+            for (const it of items) {
+                const iid = (0, crypto_1.randomUUID)();
+                const inst = String(it?.instrumentType || '').toLowerCase();
+                const amount = Number(it?.amount || 0);
+                const reference = it?.reference != null ? String(it.reference) : null;
+                const position = it?.position != null ? Number(it.position) : pos;
+                pos++;
+                // Using direct instrument columns for 'transfer' (bank_account_id) and others.
+                // Note (FA): در این بخش، از ستون‌های مستقیم ابزار استفاده می‌شود و تبدیل‌های instrument_links حذف شده‌اند.
+                const bankAccountId = it?.bankAccountId ? String(it.bankAccountId) : null;
+                const checkId = it?.checkId ? String(it.checkId) : null;
+                await client.query(`INSERT INTO payment_items (id, payment_id, instrument_type, amount, reference, bank_account_id, check_id, position)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [iid, id, inst, amount, reference, bankAccountId, checkId, position]);
+            }
+            // Mark incoming checks as 'spent' for any payment items of type 'checkin'
+            // This ensures checks used for payments exit the available incashbox pool.
+            await client.query(`UPDATE checks SET status = 'spent'
+         WHERE id IN (
+           SELECT pi.check_id
+           FROM payment_items pi
+           WHERE pi.payment_id = $1 AND pi.instrument_type = 'checkin' AND pi.check_id IS NOT NULL
+         )
+         AND status = 'incashbox'`, [id]);
+            // Mark outgoing checks as 'spent' for any payment items of type 'check'
+            await client.query(`UPDATE checks SET status = 'spent'
+         WHERE id IN (
+           SELECT pi.check_id
+           FROM payment_items pi
+           JOIN checks c ON c.id = pi.check_id
+           WHERE pi.payment_id = $1 AND pi.instrument_type = 'check' AND pi.check_id IS NOT NULL AND c.type = 'outgoing'
+         )
+         AND status <> 'spent'`, [id]);
+            // Revert statuses for checks removed from the payment compared to previous items
+            // - Outgoing checks: 'spent' -> 'issued'
+            // - Incoming checks (check-in): 'spent' -> 'incashbox'
+            // Persian note (FA): با حذف آیتم‌های چک/چک‌دریافتی، وضعیت چک به حالت قبل برگردانده می‌شود.
+            const newOutgoingIds = Array.from(new Set((items || [])
+                .filter((it) => String(it?.instrumentType || '').toLowerCase() === 'check')
+                .map((it) => (it?.checkId != null ? String(it.checkId) : null))
+                .filter((v) => v)));
+            const newIncomingIds = Array.from(new Set((items || [])
+                .filter((it) => String(it?.instrumentType || '').toLowerCase() === 'checkin')
+                .map((it) => (it?.checkId != null ? String(it.checkId) : null))
+                .filter((v) => v)));
+            const removedOutgoing = oldOutgoingIds.filter((id0) => !newOutgoingIds.includes(id0));
+            const removedIncoming = oldIncomingIds.filter((id0) => !newIncomingIds.includes(id0));
+            if (removedOutgoing.length > 0) {
+                await client.query(`UPDATE checks SET status = 'issued'
+           WHERE id IN (SELECT unnest($1::text[])) AND status = 'spent'`, [removedOutgoing]);
+            }
+            if (removedIncoming.length > 0) {
+                await client.query(`UPDATE checks SET status = 'incashbox'
+           WHERE id IN (SELECT unnest($1::text[])) AND status = 'spent'`, [removedIncoming]);
+            }
+            await client.query('COMMIT');
+            // Fetch updated payment in camelCase shape
+            const hr = await client.query(`SELECT id, number, status, date, fiscal_year_id, detail_id, special_code_id, description, total_amount, cashbox_id
+         FROM payments WHERE id = $1 LIMIT 1`, [id]);
+            const ir = await client.query(`SELECT id, instrument_type, amount, reference, bank_account_id, check_id, position
+         FROM payment_items
+         WHERE payment_id = $1
+         ORDER BY COALESCE(position, 0) ASC, created_at ASC`, [id]);
+            const itemsOut = (ir.rows || []).map((r) => ({
+                id: r.id,
+                instrumentType: r.instrument_type,
+                amount: Number(r.amount || 0),
+                reference: r.reference ?? null,
+                bankAccountId: r.bank_account_id ?? null,
+                checkId: r.check_id ?? null,
+                position: r.position ?? null,
+            }));
+            const h = hr.rows[0];
+            const item = {
+                id: String(h.id),
+                number: h.number ?? null,
+                status: String(h.status || '').toLowerCase() === 'temporary' ? 'draft' : (String(h.status || '').toLowerCase() === 'permanent' ? 'posted' : h.status),
+                date: h.date,
+                fiscalYearId: h.fiscal_year_id ?? null,
+                detailId: h.detail_id ?? null,
+                specialCodeId: h.special_code_id ?? null,
+                description: h.description ?? null,
+                cashboxId: h.cashbox_id ?? null,
+                items: itemsOut,
+            };
+            client.release();
+            return res.status(200).json({ ok: true, item, message: (0, i18n_1.t)('treasury.payments.updated', lang) });
+        }
+        catch (e) {
+            try {
+                await client.query('ROLLBACK');
+            }
+            catch { }
+            client.release();
+            return res.status(500).json({ ok: false, error: e?.message || (0, i18n_1.t)('error.generic', lang) });
+        }
+    }
+    catch (e) {
+        return res.status(500).json({ ok: false, error: e?.message || (0, i18n_1.t)('error.generic', lang) });
+    }
+});
+/**
+ * DELETE /payments/:id
+ * Deletes a draft payment; fails if posted.
+ */
+exports.treasuryRouter.delete('/payments/:id', async (req, res) => {
+    const lang = req.lang || 'en';
+    const id = String(req.params.id || '').trim();
+    if (!id)
+        return res.status(400).json({ ok: false, error: (0, i18n_1.t)('error.invalidInput', lang) });
+    try {
+        const p = (0, pg_1.getPool)();
+        const ex = await p.query(`SELECT id, status FROM payments WHERE id = $1 LIMIT 1`, [id]);
+        if (!ex.rows?.length) {
+            return res.status(404).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.notFound', lang) });
+        }
+        const currentStatus = String(ex.rows[0].status || '').toLowerCase();
+        if (currentStatus === 'permanent' || currentStatus === 'posted') {
+            return res.status(409).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.cannotModifyPosted', lang) });
+        }
+        const client = await p.connect();
+        try {
+            await client.query('BEGIN');
+            // Revert check statuses prior to deletion
+            // - Outgoing checks in this payment: 'spent' -> 'issued'
+            // - Incoming check-ins in this payment: 'spent' -> 'incashbox'
+            // Persian note (FA): پیش از حذف پرداخت، وضعیت چک‌ها به حالت مناسب بازگردانده می‌شود.
+            const outRows = await client.query(`SELECT c.id AS id
+         FROM payment_items pi
+         JOIN checks c ON c.id = pi.check_id
+         WHERE pi.payment_id = $1 AND pi.instrument_type = 'check' AND pi.check_id IS NOT NULL AND c.type = 'outgoing'`, [id]);
+            const inRows = await client.query(`SELECT c.id AS id
+         FROM payment_items pi
+         JOIN checks c ON c.id = pi.check_id
+         WHERE pi.payment_id = $1 AND pi.instrument_type = 'checkin' AND pi.check_id IS NOT NULL AND c.type = 'incoming'`, [id]);
+            const outIds = (outRows.rows || []).map((r) => String(r.id));
+            const inIds = (inRows.rows || []).map((r) => String(r.id));
+            if (outIds.length > 0) {
+                await client.query(`UPDATE checks SET status = 'issued'
+           WHERE id IN (SELECT unnest($1::text[])) AND status = 'spent'`, [outIds]);
+            }
+            if (inIds.length > 0) {
+                await client.query(`UPDATE checks SET status = 'incashbox'
+           WHERE id IN (SELECT unnest($1::text[])) AND status = 'spent'`, [inIds]);
+            }
+            await client.query('DELETE FROM payment_items WHERE payment_id = $1', [id]);
+            await client.query('DELETE FROM payments WHERE id = $1', [id]);
+            await client.query('COMMIT');
+            client.release();
+            return res.json({ ok: true, message: (0, i18n_1.t)('treasury.payments.deleted', lang) });
+        }
+        catch (err) {
+            try {
+                await client.query('ROLLBACK');
+            }
+            catch { }
+            console.error('[DELETE /payments/:id] Transaction error:', err);
+            client.release();
+            return res.status(500).json({ ok: false, error: err?.message || (0, i18n_1.t)('error.generic', lang) });
+        }
+    }
+    catch (e) {
+        return res.status(500).json({ ok: false, error: e?.message || (0, i18n_1.t)('error.generic', lang) });
+    }
+});
+/**
+ * GET /payments/:id
+ * Fetch a single payment with header and items using direct instrument columns.
+ * Items include `bank_account_id` and `check_id`.
+ * Note (FA): در این مسیر، جزئیات ابزار به‌صورت ستون‌های مستقیم بازگردانده می‌شود؛ کارت در پرداخت‌ها حذف شده است.
+ */
+exports.treasuryRouter.get('/payments/:id', async (req, res) => {
+    const lang = req.lang || 'en';
+    const id = String(req.params.id || '').trim();
+    if (!id)
+        return res.status(400).json({ ok: false, error: (0, i18n_1.t)('error.invalidInput', lang) });
+    try {
+        const p = (0, pg_1.getPool)();
+        const hr = await p.query(`SELECT id, number, status, date, fiscal_year_id, detail_id, special_code_id, description, total_amount, cashbox_id, journal_id
+       FROM payments
+       WHERE id = $1
+       LIMIT 1`, [id]);
+        if (!hr.rows[0])
+            return res.status(404).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.notFound', lang) });
+        // Items include direct instrument columns for instruments: bank_account_id, card_reader_id, check_id.
+        // Note (FA): آیتم‌ها شامل ستون‌های مستقیم ابزار هستند؛ دیگر از instrument_links استفاده نمی‌شود.
+        const ir = await p.query(`SELECT pi.id, pi.instrument_type, pi.amount, pi.reference, pi.bank_account_id, pi.check_id, pi.position
+       FROM payment_items pi
+       WHERE pi.payment_id = $1
+       ORDER BY COALESCE(pi.position, 0) ASC, pi.created_at ASC`, [id]);
+        const items = (ir.rows || []).map((r) => ({
+            id: r.id,
+            instrumentType: r.instrument_type,
+            amount: Number(r.amount || 0),
+            reference: r.reference ?? null,
+            bankAccountId: r.bank_account_id ?? null,
+            checkId: r.check_id ?? null,
+            position: r.position ?? null,
+        }));
+        const h = hr.rows[0];
+        const item = {
+            id: String(h.id),
+            number: h.number ?? null,
+            status: String(h.status || '').toLowerCase() === 'temporary' ? 'draft' : (String(h.status || '').toLowerCase() === 'permanent' ? 'posted' : h.status),
+            date: h.date,
+            fiscalYearId: h.fiscal_year_id ?? null,
+            detailId: h.detail_id ?? null,
+            specialCodeId: h.special_code_id ?? null,
+            description: h.description ?? null,
+            totalAmount: Number(h.total_amount || 0),
+            cashboxId: h.cashbox_id ?? null,
+            journalId: h.journal_id ?? null,
+            items,
+        };
+        return res.json({ ok: true, data: item, message: (0, i18n_1.t)('treasury.payments.fetchOne', lang) });
+    }
+    catch (e) {
+        return res.status(500).json({ ok: false, error: e?.message || (0, i18n_1.t)('error.generic', lang) });
+    }
+});
+/**
+ * POST /payments/:id/post
+ * Create a temporary journal for the payment and mark it as sent.
+ * Mirrors receipt posting with inverted debit/credit logic.
+ * FA: ایجاد سند موقت برای پرداخت و تغییر وضعیت به «ارسال‌شده».
+ */
+exports.treasuryRouter.post('/payments/:id/post', async (req, res) => {
+    const lang = req.lang || 'en';
+    const id = String(req.params.id || '').trim();
+    if (!id)
+        return res.status(400).json({ ok: false, error: (0, i18n_1.t)('error.invalidInput', lang) });
+    try {
+        const p = (0, pg_1.getPool)();
+        const client = await p.connect();
+        try {
+            await client.query('BEGIN');
+            const hr = await client.query(`SELECT id, number, status, date, fiscal_year_id, detail_id, special_code_id, description, total_amount, cashbox_id
+         FROM payments WHERE id = $1 LIMIT 1`, [id]);
+            if (!hr.rows[0]) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.notFound', lang) });
+            }
+            const h = hr.rows[0];
+            const currentStatus = String(h.status || '').toLowerCase();
+            if (currentStatus === 'posted' || currentStatus === 'permanent') {
+                await client.query('ROLLBACK');
+                return res.status(409).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.cannotModifyPosted', lang) });
+            }
+            const ir = await client.query(`SELECT pi.id, pi.instrument_type, pi.amount, pi.reference, pi.bank_account_id, pi.check_id, pi.position
+         FROM payment_items pi
+         WHERE pi.payment_id = $1
+         ORDER BY COALESCE(pi.position, 0) ASC, pi.created_at ASC`, [id]);
+            const items = ir.rows || [];
+            if (!items.length) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.missingItems', lang) });
+            }
+            const total = Number(h.total_amount || 0);
+            const sumItems = items.reduce((sum, it) => sum + Number(it.amount || 0), 0);
+            if (Math.abs(total - sumItems) > 0.0001) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.invalidTotal', lang) });
+            }
+            // Resolve code ids for instrument accounts and counterparty (payment variant)
+            const codeCash = await resolveCodeIdFromEnv(client, 'CODE_TREASURY_CASH_PAYMENT');
+            const codeTransfer = await resolveCodeIdFromEnv(client, 'CODE_TREASURY_TRANSFER_PAYMENT');
+            const codeCheckPayment = await resolveCodeIdFromEnv(client, 'CODE_TREASURY_CHECK_PAYMENT');
+            const codeCheckReceipt = await resolveCodeIdFromEnv(client, 'CODE_TREASURY_CHECK_RECEIPT');
+            const codeCounter = await resolveCodeIdFromEnv(client, 'CODE_TREASURY_COUNTERPARTY_PAYMENT');
+            const journalItems = [];
+            for (const it of items) {
+                const inst = String(it.instrument_type || '').toLowerCase();
+                const amt = Number(it.amount || 0);
+                if (inst === 'cash') {
+                    if (!h.cashbox_id) {
+                        await client.query('ROLLBACK');
+                        return res.status(400).json({ ok: false, error: (0, i18n_1.t)('treasury.receipts.cashboxRequired', lang) });
+                    }
+                    const cb = await client.query(`SELECT id, code, name, handler_detail_id FROM cashboxes WHERE id = $1 LIMIT 1`, [String(h.cashbox_id)]);
+                    const cbRow = cb.rows[0];
+                    journalItems.push({
+                        code_id: codeCash,
+                        debit: 0,
+                        credit: amt,
+                        detail_id: cbRow?.handler_detail_id ?? null,
+                        description: `${lang === 'fa' ? 'پرداخت وجه نقد' : 'Payment Cash'}`.trim()
+                    });
+                }
+                else if (inst === 'transfer') {
+                    const ba = it.bank_account_id ? await client.query(`SELECT id, account_number, name, handler_detail_id FROM bank_accounts WHERE id = $1 LIMIT 1`, [String(it.bank_account_id)]) : { rows: [] };
+                    const baRow = ba.rows[0];
+                    journalItems.push({
+                        code_id: codeTransfer,
+                        debit: 0,
+                        credit: amt,
+                        detail_id: baRow?.handler_detail_id ?? null,
+                        description: `${lang === 'fa' ? 'برداشت طی حواله شماره' : 'Withdraw via bank transfer'}${it.reference ? ` ${String(it.reference)}` : ''}`.trim()
+                    });
+                }
+                else if (inst === 'check') {
+                    const ck = it.check_id ? await client.query(`SELECT id, number, bank_name, due_date FROM checks WHERE id = $1 LIMIT 1`, [String(it.check_id)]) : { rows: [] };
+                    const ckRow = ck.rows[0];
+                    let dd = '';
+                    if (ckRow?.due_date) {
+                        const d = new Date(ckRow.due_date);
+                        dd = lang === 'fa'
+                            ? new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+                            : d.toISOString().slice(0, 10);
+                    }
+                    journalItems.push({
+                        code_id: codeCheckPayment,
+                        debit: 0,
+                        credit: amt,
+                        detail_id: h.detail_id ?? null,
+                        description: `${lang === 'fa' ? 'پرداخت ' : ''}${ckRow?.bank_name ?? ''} ${ckRow?.number ?? ''} ${dd}`.trim()
+                    });
+                }
+                else if (inst === 'checkin') {
+                    const ck = it.check_id ? await client.query(`SELECT id, number, bank_name, due_date, beneficiary_detail_id FROM checks WHERE id = $1 LIMIT 1`, [String(it.check_id)]) : { rows: [] };
+                    const ckRow = ck.rows[0];
+                    let dd = '';
+                    if (ckRow?.due_date) {
+                        const d = new Date(ckRow.due_date);
+                        dd = lang === 'fa'
+                            ? new Intl.DateTimeFormat('fa-IR-u-ca-persian', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+                            : d.toISOString().slice(0, 10);
+                    }
+                    journalItems.push({
+                        code_id: codeCheckReceipt,
+                        debit: 0,
+                        credit: amt,
+                        detail_id: ckRow?.beneficiary_detail_id ?? null,
+                        description: `${lang === 'fa' ? 'پرداخت ' : ''}${ckRow?.bank_name ?? ''} ${ckRow?.number ?? ''} ${dd}`.trim()
+                    });
+                }
+                else {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ ok: false, error: (0, i18n_1.t)('treasury.payments.invalidInstrument', lang) });
+                }
+            }
+            // Debit line for counterparty (payment header detail)
+            const counterCodeId = h.special_code_id ?? codeCounter;
+            journalItems.push({
+                code_id: counterCodeId,
+                debit: total,
+                credit: 0,
+                detail_id: h.detail_id ?? null,
+                description: String(h.description ?? '') || null
+            });
+            // Compute next ref_no and next code within fiscal year (if available)
+            const fyId = h.fiscal_year_id ?? null;
+            let nextRef = null;
+            let nextCode = null;
+            if (fyId) {
+                const probeRef = await client.query(`SELECT COALESCE(MAX(CAST(ref_no AS INT)), 0) AS max_ref
+           FROM journals
+           WHERE fiscal_year_id = $1 AND ref_no ~ '^[0-9]+'`, [fyId]);
+                nextRef = String(Number(probeRef.rows[0]?.max_ref || 0) + 1);
+                const probeCode = await client.query(`SELECT COALESCE(MAX(CAST(code AS INT)), 0) AS max_code
+           FROM journals
+           WHERE fiscal_year_id = $1 AND code ~ '^[0-9]+'`, [fyId]);
+                nextCode = String(Number(probeCode.rows[0]?.max_code || 0) + 1);
+            }
+            // Insert journal as temporary
+            const journalId = (0, crypto_1.randomUUID)();
+            await client.query(`INSERT INTO journals (id, fiscal_year_id, ref_no, code, date, description, type, provider, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [journalId, fyId, nextRef, nextCode, h.date, h.description ?? null, 'payment', 'treasury', 'temporary']);
+            for (const it of journalItems) {
+                await client.query(`INSERT INTO journal_items (id, journal_id, code_id, party_id, debit, credit, description, detail_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [(0, crypto_1.randomUUID)(), journalId, it.code_id, null, it.debit, it.credit, it.description ?? null, it.detail_id ?? null]);
+            }
+            // Mark payment as sent and link journal
+            await client.query(`UPDATE payments SET status = 'sent', journal_id = $2 WHERE id = $1`, [id, journalId]);
+            // Build response item
+            const hr2 = await client.query(`SELECT id, number, status, date, fiscal_year_id, detail_id, special_code_id, description, total_amount, cashbox_id
+         FROM payments
+         WHERE id = $1
+         LIMIT 1`, [id]);
+            const ir2 = await client.query(`SELECT id, instrument_type, amount, reference, bank_account_id, check_id, position
+         FROM payment_items
+         WHERE payment_id = $1
+         ORDER BY COALESCE(position, 0) ASC, created_at ASC`, [id]);
+            const items2 = (ir2.rows || []).map((r) => ({
+                id: r.id,
+                instrumentType: r.instrument_type,
+                amount: Number(r.amount || 0),
+                reference: r.reference ?? null,
+                bankAccountId: r.bank_account_id ?? null,
+                checkId: r.check_id ?? null,
+                position: r.position ?? null,
+            }));
+            const h2 = hr2.rows[0];
+            const item = {
+                id: String(h2.id),
+                number: h2.number ?? null,
+                status: String(h2.status || '').toLowerCase() === 'temporary' || String(h2.status || '').toLowerCase() === 'sent' ? 'draft' : (String(h2.status || '').toLowerCase() === 'permanent' ? 'posted' : h2.status),
+                date: h2.date,
+                fiscalYearId: h2.fiscal_year_id ?? null,
+                detailId: h2.detail_id ?? null,
+                specialCodeId: h2.special_code_id ?? null,
+                description: h2.description ?? null,
+                totalAmount: Number(h2.total_amount || 0),
+                cashboxId: h2.cashbox_id ?? null,
+                items: items2,
+            };
+            await client.query('COMMIT');
+            return res.json({ ok: true, item, journalId, message: (0, i18n_1.t)('treasury.payments.sent', lang) });
+        }
+        catch (err) {
+            await client.query('ROLLBACK');
+            return res.status(500).json({ ok: false, error: err?.message || (0, i18n_1.t)('error.generic', lang) });
+        }
+        finally {
+            client.release();
+        }
+    }
+    catch (e) {
+        return res.status(500).json({ ok: false, error: e?.message || (0, i18n_1.t)('error.generic', lang) });
     }
 });
 exports.default = exports.treasuryRouter;

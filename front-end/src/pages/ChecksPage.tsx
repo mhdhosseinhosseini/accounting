@@ -666,7 +666,7 @@ export default function ChecksPage(): React.ReactElement {
       issue_date: form.issue_date || null,
       due_date: form.due_date || null,
       number: toAsciiDigits(form.number),
-      party_detail_id: form.party_detail_id || null,
+      beneficiary_detail_id: form.party_detail_id || null,
       amount: toAsciiDigits(form.amount),
       notes: form.notes || null,
     };
@@ -932,15 +932,17 @@ export default function ChecksPage(): React.ReactElement {
     e.preventDefault();
     // Client-side validation block; abort submit when invalid
     if (!validateForm()) { return; }
+
     const body = {
       type: 'outgoing',
       issue_date: form.issue_date || null,
       due_date: form.due_date || null,
       number: toAsciiDigits(form.number),
-      party_detail_id: form.party_detail_id || null,
+      beneficiary_detail_id: form.party_detail_id || null,
       amount: toAsciiDigits(form.amount),
       notes: form.notes || null,
     } as any;
+
     try {
       if (editingId) {
         await axios.patch(`${config.API_ENDPOINTS.base}/v1/treasury/checks/${encodeURIComponent(editingId)}`, body, { headers: { 'Accept-Language': lang } });

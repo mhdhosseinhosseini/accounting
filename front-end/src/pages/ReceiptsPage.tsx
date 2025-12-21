@@ -3,7 +3,7 @@ import axios from 'axios';
 import Navbar from '../components/Navbar';
 import { useTranslation } from 'react-i18next';
 import config from '../config';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { IconButton, Tooltip, Button, TextField, Select, MenuItem, FormControl, InputLabel, Chip } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArticleIcon from '@mui/icons-material/Article';
@@ -20,6 +20,10 @@ import persian from 'react-date-object/calendars/persian';
 import { listDetails } from '../services/details';
 import JalaliDateRangePicker from '../components/common/JalaliDateRangePicker';
 import SearchableSelect from '../components/common/SearchableSelect';
+import { getReceipt } from '../services/receipts';
+import { listCashboxes, listBankAccounts, listCardReadersForAccount, listChecks } from '../services/treasury';
+import type { Cashbox, BankAccount, CardReader, Check } from '../types/treasury';
+import type { Receipt, ReceiptItem } from '../types/receipts';
 
 /**
  * ReceiptsPage
@@ -67,6 +71,27 @@ const ReceiptsPage: React.FC = () => {
     return map;
   }, [detailOptions]);
 
+  // Print mode state
+  const [printMode, setPrintMode] = useState<boolean>(false);
+  const [printReceipt, setPrintReceipt] = useState<Receipt | null>(null);
+  const [printLoading, setPrintLoading] = useState<boolean>(false);
+  const [printError, setPrintError] = useState<string | null>(null);
+
+  // Option lists for details rendering in print view
+  const [cashboxes, setCashboxes] = useState<Cashbox[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [checks, setChecks] = useState<Check[]>([]);
+  const [cardReadersByBankId, setCardReadersByBankId] = useState<Record<string, CardReader[]>>({});
+
+  // Fiscal years for header label in print
+  interface FiscalYearRef { id: number; name: string; start_date: string; end_date: string; is_closed?: boolean }
+  const [fiscalYears, setFiscalYears] = useState<FiscalYearRef[]>([]);
+  const fyLabel = useMemo(() => {
+    const id = printReceipt?.fiscalYearId ? String(printReceipt.fiscalYearId) : '';
+    const fy = id ? fiscalYears.find((f) => String(f.id) === id) : undefined;
+    return fy ? String(fy.name || '') : '';
+  }, [fiscalYears, printReceipt?.fiscalYearId]);
+
   /** toAsciiDigits
    * Normalizes Farsi/Arabic-Indic numerals to ASCII digits for sort/search.
    */
@@ -79,6 +104,18 @@ const ReceiptsPage: React.FC = () => {
         return ch;
       })
       .join('');
+  }
+
+  /** toPersianDigits
+   * Converts ASCII digits to Persian digits for RTL display. */
+  function toPersianDigits(str: string): string {
+    return String(str).replace(/[0-9]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[parseInt(d, 10)]);
+  }
+
+  /** safeText
+   * Escapes HTML special characters for safe inline HTML injection. */
+  function safeText(s: string): string {
+    return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
   }
 
   /** toDateObjectSafe
@@ -161,6 +198,21 @@ const ReceiptsPage: React.FC = () => {
   }
 
   useEffect(() => { fetchReceipts(); fetchDetails(); }, [lang]);
+
+  /** handlePrint
+   * Opens printable receipt in a new tab, similar to Documents page. */
+  function handlePrint(id: string) { printReceiptInNewTab(id); }
+  /** detectPrintFromQuery
+   * Activates printing when URL contains ?print=1&id=<receiptId>. */
+  const location = useLocation();
+  useEffect(() => {
+    try {
+      const qs = new URLSearchParams(location.search || '');
+      const p = qs.get('print');
+      const rid = qs.get('id') || qs.get('receiptId') || qs.get('printId');
+      if (p === '1' && rid) { printReceiptInNewTab(String(rid)); }
+    } catch { /* ignore */ }
+  }, [location.search]);
 
   /** applyFilters
    * Applies date/payer/status filters client-side. */
@@ -329,13 +381,359 @@ const ReceiptsPage: React.FC = () => {
    * Closes AlertDialog and clears transient state. */
   function closeAlert(): void { setAlertOpen(false); setAlertTitle(undefined); setAlertMessage(''); }
 
-  /** handlePrint
-   * Opens printable receipt in a new browser tab and triggers print.
-   * Falls back to navigating in current tab if popup blocked. */
-  function handlePrint(id: string) {
-    const url = `/treasury/receipts/${encodeURIComponent(id)}?print=1`;
-    const win = window.open(url, '_blank');
-    if (!win) { navigate(url); }
+  /** formatAmountForLocale
+   * Formats amounts for the current language with no decimals. */
+  function formatAmountForLocale(val: number, lng: string): string {
+    try {
+      return new Intl.NumberFormat(lng === 'fa' ? 'fa-IR' : 'en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.round(Number(val || 0)));
+    } catch { return formatAmountNoDecimals(val); }
+  }
+
+  /** renderItemDetails
+   * Returns instrument-specific details for the Details column in print view. */
+  function renderItemDetails(it: ReceiptItem): string {
+    const bankAccountId = (it as any).bankAccountId ?? (it as any).bank_account_id ?? null;
+    const cardReaderId = (it as any).cardReaderId ?? (it as any).card_reader_id ?? null;
+    const checkId = (it as any).checkId ?? (it as any).check_id ?? null;
+    const tLabel = t('pages.receipts.items.details', 'Details');
+
+    const type = String((it as any).instrumentType || '').toLowerCase();
+    if (type === 'cash') {
+      const cbx = (cashboxes || []).find((c) => String(c.id) === String((it as any).cashboxId || ''));
+      return cbx ? `${String(cbx.name || '')}${(cbx as any)?.code != null ? ` (${String((cbx as any).code)})` : ''}` : tLabel;
+    }
+    if (type === 'transfer') {
+      const ba = (bankAccounts || []).find((b) => String(b.id) === String(bankAccountId || ''));
+      const bank = ba ? String((ba as any).name || (ba as any).bank_name || '') : '';
+      const accRaw = ba ? String((ba as any).card_number || (ba as any).account_number || '') : '';
+      const acc = isRTL ? toPersianDigits(accRaw) : accRaw;
+      const accText = [bank, acc].filter(Boolean).join(' - ');
+      return accText || tLabel;
+    }
+    if (type === 'card') {
+      const scopedReaders = bankAccountId ? (cardReadersByBankId[String(bankAccountId)] || []) : [];
+      const globalReaders = Object.values(cardReadersByBankId).flat();
+      const readersPool = scopedReaders.length ? scopedReaders : globalReaders;
+      const rdr = readersPool.find((r) => String(r.id) === String(cardReaderId || ''));
+      if (rdr) {
+        const psp = String((rdr as any).psp_provider || '');
+        const tidRaw = String((rdr as any).terminal_id || '');
+        const tid = isRTL ? toPersianDigits(tidRaw) : tidRaw;
+        return [psp, tid].filter(Boolean).join(' - ');
+      }
+      return tLabel;
+    }
+    if (type === 'check') {
+      const chk = (checks || []).find((c) => String(c.id) === String(checkId || ''));
+      if (chk) {
+        const bank = String((chk as any).bank_name || '');
+        const issuer = String((chk as any).issuer || '');
+        const numRaw = String((chk as any).check_number || (chk as any).number || '');
+        const num = isRTL ? toPersianDigits(numRaw) : numRaw;
+        const due = formatDisplayDate((chk as any).due_date || '') || '';
+        let account = '';
+        const baId = (chk as any).bank_account_id || null;
+        if (baId) {
+          const ba = (bankAccounts || []).find((b) => String(b.id) === String(baId));
+          const accRaw = ba ? String((ba as any).account_number || (ba as any).card_number || '') : '';
+          account = isRTL ? toPersianDigits(accRaw) : accRaw;
+          const name = ba ? String((ba as any).name || '') : '';
+          account = [name, account].filter(Boolean).join(' ');
+        }
+        const parts = [bank, issuer, num, account, due].filter(Boolean);
+        return parts.length ? parts.join(' - ') : tLabel;
+      }
+      return tLabel;
+    }
+    return tLabel;
+  }
+
+  /** fetchFiscalYears
+   * Loads fiscal years to display label in the print header. */
+  async function fetchFiscalYears(): Promise<void> {
+    try {
+      const res = await axios.get(`${config.API_ENDPOINTS.base}/v1/fiscal-years`, { headers: { 'Accept-Language': lang } });
+      const list: FiscalYearRef[] = res.data.items || res.data || [];
+      setFiscalYears(list);
+    } catch { /* non-blocking */ }
+  }
+
+  /** loadPrintOptions
+   * Fetches cashboxes, bank accounts, checks, and card readers required for rendering Details. */
+  async function loadPrintOptions(): Promise<void> {
+    try {
+      const [cbx, accounts, chks] = await Promise.all([
+        listCashboxes(),
+        listBankAccounts(),
+        listChecks(),
+      ]);
+      setCashboxes(Array.isArray(cbx) ? cbx : []);
+      setBankAccounts(Array.isArray(accounts) ? accounts : []);
+      setChecks(Array.isArray(chks) ? chks : []);
+      const map: Record<string, CardReader[]> = {};
+      await Promise.all((Array.isArray(accounts) ? accounts : []).map(async (ba: any) => {
+        const rid = String(ba.id);
+        try {
+          const readers = await listCardReadersForAccount(rid);
+          map[rid] = Array.isArray(readers) ? readers : [];
+        } catch { map[rid] = []; }
+      }));
+      setCardReadersByBankId(map);
+    } catch { /* non-blocking */ }
+  }
+
+  /** startPrint
+   * Activates print mode, loads the targeted receipt and its supporting option data. */
+  async function startPrint(id: string): Promise<void> {
+    setPrintMode(true);
+    setPrintLoading(true);
+    setPrintError(null);
+    try {
+      const rec = await getReceipt(id);
+      setPrintReceipt(rec);
+      await Promise.all([loadPrintOptions(), fetchFiscalYears()]);
+    } catch (e: any) {
+      setPrintError(e?.response?.data?.message || e?.message || t('common.error', 'Error'));
+    } finally { setPrintLoading(false); }
+  }
+
+  /** buildReceiptPrintHtml
+   * Builds a standalone HTML string for printable receipt view (RTL-aware). */
+  function buildReceiptPrintHtml(rec: Receipt): string {
+    const rtl = isRTL;
+    const title = rtl ? 'دریافتی' : 'Receipt';
+    const headerLabel = rtl ? 'مشخصات دریافت' : 'Receipt Header';
+    const itemsLabel = rtl ? 'آیتم‌های دریافت' : 'Receipt Items';
+
+    const numberDisp = rtl ? toPersianDigits(String(rec.number || '')) : String(rec.number || '');
+    const dateDisp = formatDisplayDate(rec.date);
+    const payerName = detailNameById[String(rec.detailId || '')] || '-';
+    const statusNorm = normalizeReceiptStatus(String(rec.status || ''));
+    const statusLabel = statusNorm === 'draft' ? (rtl ? 'پیش‌نویس' : 'Draft') : (rtl ? 'ثبت‌شده' : 'Posted');
+    const desc = safeText(String(rec.description || ''));
+
+    const cashbox = rec.cashboxId ? (cashboxes || []).find((c) => String(c.id) === String(rec.cashboxId)) : undefined;
+    const cashboxText = cashbox ? `${String(cashbox.name || '')}${(cashbox as any)?.code != null ? ` (${String((cashbox as any).code)})` : ''}` : '-';
+
+    const colInstr = rtl ? 'نوع' : 'Instrument';
+    const colRef = rtl ? 'شماره مرجع' : 'Reference No.';
+    const colDetails = rtl ? 'جزئیات' : 'Details';
+    const colAmount = rtl ? 'مبلغ' : 'Amount';
+
+    const rowsHtml = (rec.items || []).map((it: any) => {
+      const type = String((it as any).instrumentType || '').toLowerCase();
+      const typeLabelMap: Record<string, string> = {
+        cash: rtl ? 'نقد' : 'Cash',
+        transfer: rtl ? 'حواله' : 'Transfer',
+        card: rtl ? 'کارت' : 'Card',
+        check: rtl ? 'چک' : 'Check',
+      };
+      const instrLabel = typeLabelMap[type] || (rtl ? 'نوع' : 'Instrument');
+
+      // Prefer check_number/number for check items as the reference, otherwise fall back
+      let refRaw: string = (it as any).reference ?? (it as any).cardRef ?? (it as any).transferRef ?? '';
+      if (type === 'check') {
+        const chkId = (it as any).checkId ?? (it as any).check_id;
+        const chk = (checks || []).find((c) => String(c.id) === String(chkId || ''));
+        refRaw = (chk as any)?.check_number ?? (chk as any)?.number ?? refRaw;
+      }
+      const refDisp = rtl ? toPersianDigits(String(refRaw || '')) : String(refRaw || '');
+
+      // Details: empty for cash; else use renderItemDetails
+      const detValue = renderItemDetails(it as ReceiptItem) || '';
+      const det = safeText(detValue);
+      const detCell = type === 'cash' ? '' : (det || '-');
+
+      const amt = formatAmountNoDecimals((it as any).amount || 0);
+      return `<tr>
+        <td>${safeText(instrLabel)}</td>
+        <td>${refDisp || '-'}</td>
+        <td>${detCell|| '-'}</td>
+        <td class="amount text-end">${amt}</td>
+      </tr>`;
+    }).join('');
+
+    const total = Number(rec.totalAmount || 0) || (rec.items || []).reduce((s, ii: any) => s + Number(ii?.amount || 0), 0);
+    const totalStr = formatAmountNoDecimals(total);
+
+    const fy = rec.fiscalYearId ? fiscalYears.find((f) => String(f.id) === String(rec.fiscalYearId)) : undefined;
+    const fyName = fy ? String(fy.name || '') : '';
+
+    const html = `<!doctype html>
+<html lang="${rtl ? 'fa' : 'en'}" dir="${rtl ? 'rtl' : 'ltr'}">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${safeText(title)}</title>
+${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap" />' : ''}
+<style>
+  body { font-family: ${rtl ? "'Vazirmatn', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif" : "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif"}; color: #0f172a; background: #ffffff; margin: 16px; }
+  h1, h2 { margin: 0 0 8px; }
+  .muted { color: #475569; }
+  .section { margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: ${rtl ? '1fr 1fr' : '1fr 1fr'}; gap: 8px; }
+  .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #f8fafc; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { border: 1px solid #e5e7eb; padding: 6px 8px; font-size: 13px; }
+  th { background: #f1f5f9; text-align: ${rtl ? 'right' : 'left'}; }
+  td { text-align: ${rtl ? 'right' : 'left'}; }
+  .text-end { text-align: ${rtl ? 'left' : 'right'}; }
+  .amount { background: #f8fafc; }
+  @page { size: A4 portrait; margin: 16mm; }
+</style>
+</head>
+<body>
+  <h1>${safeText(title)}</h1>
+  <div class="section card">
+    <h2 class="muted">${safeText(headerLabel)}</h2>
+    <div class="grid">
+      <div><strong>${rtl ? 'شماره' : 'Number'}:</strong> ${numberDisp || '-'}</div>
+      <div><strong>${rtl ? 'تاریخ' : 'Date'}:</strong> ${dateDisp || '-'}</div>
+      <div><strong>${rtl ? 'دریافت‌کننده' : 'Payer'}:</strong> ${safeText(payerName) || '-'}</div>
+      <div><strong>${rtl ? 'وضعیت' : 'Status'}:</strong> ${safeText(statusLabel) || '-'}</div>
+      <div><strong>${rtl ? 'سال مالی' : 'Fiscal Year'}:</strong> ${safeText(fyName || '')}</div>
+      <div><strong>${rtl ? 'صندوق' : 'Cashbox'}:</strong> ${safeText(cashboxText)}</div>
+      <div style="grid-column: span 2"><strong>${rtl ? 'توضیحات' : 'Description'}:</strong> ${desc || '-'}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2 class="muted">${safeText(itemsLabel)}</h2>
+    <table>
+      <colgroup>
+        <col style="width: 18%" />
+        <col style="width: 18%" />
+        <col style="width: 46%" />
+        <col style="width: 18%" />
+      </colgroup>
+      <thead>
+        <tr>
+          <th>${safeText(colInstr)}</th>
+          <th>${safeText(colRef)}</th>
+          <th>${safeText(colDetails)}</th>
+          <th>${safeText(colAmount)}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3" class="amount"><strong>${rtl ? 'جمع' : 'Total'}</strong></td>
+          <td class="amount text-end"><strong>${totalStr}</strong></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <script>
+    window.focus();
+    window.addEventListener('load', function () {
+      setTimeout(function () { try { window.print(); } catch (e) {} }, 200);
+    });
+  </script>
+</body>
+</html>`;
+
+    return html;
+  }
+
+  /** printReceiptInNewTab
+   * Loads receipt and options, builds print HTML, and opens it in a new tab. */
+  async function printReceiptInNewTab(id: string): Promise<void> {
+    try {
+      const rec = await getReceipt(id);
+      await Promise.all([loadPrintOptions(), fetchFiscalYears()]);
+      const html = buildReceiptPrintHtml(rec);
+      const printWin = window.open('', '_blank');
+      if (!printWin) { return; }
+      printWin.document.open('text/html');
+      printWin.document.write(html);
+      printWin.document.close();
+    } catch (e: any) {
+      setAlertType('error');
+      setAlertTitle(undefined);
+      setAlertMessage(e?.response?.data?.message || e?.message || t('common.error', 'Error'));
+      setAlertOpen(true);
+    }
+  }
+
+  if (printMode) {
+    const rec = printReceipt;
+    const payerName = detailNameById[String(rec?.detailId || '')] || '';
+    const cashbox = rec?.cashboxId ? (cashboxes || []).find((c) => String(c.id) === String(rec.cashboxId)) : undefined;
+    const cashboxText = cashbox ? `${String(cashbox.name || '')}${(cashbox as any)?.code != null ? ` (${String((cashbox as any).code)})` : ''}` : '-';
+    const statusNorm = normalizeReceiptStatus(String(rec?.status || ''));
+    const total = Number(rec?.totalAmount || 0) || (rec?.items || []).reduce((s, it: any) => s + Number(it?.amount || 0), 0);
+    return (
+      <div className="p-6 bg-white text-gray-900">
+        <div className="mb-4">
+          <h1 className="text-2xl font-semibold">{t('pages.receipts.printTitle','Receipt')}</h1>
+          <div className="text-sm mt-1">{t('fields.fiscalYear', 'Fiscal Year')}: {fyLabel}</div>
+          <div className="text-sm">{t('pages.receipts.fields.cashbox','Cashbox')}: {cashboxText}</div>
+        </div>
+        {printError && <div className="text-red-600 mb-4">{printError}</div>}
+        {printLoading || !rec ? (
+          <div className="text-gray-600">{t('common.loading','Loading...')}</div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2 text-sm mb-4">
+              <div><span className="font-medium">{t('pages.receipts.fields.number','Number')}:</span> <span>{rec.number || '-'}</span></div>
+              <div><span className="font-medium">{t('fields.date','Date')}:</span> <span>{formatDisplayDate(rec.date)}</span></div>
+              <div><span className="font-medium">{t('pages.receipts.fields.payer','Payer')}:</span> <span>{payerName || '-'}</span></div>
+              <div><span className="font-medium">{t('common.status','Status')}:</span> <span>{t(`pages.receipts.status.${statusNorm}`, statusNorm === 'draft' ? (isRTL ? 'پیش‌نویس' : 'Draft') : (isRTL ? 'ثبت‌شده' : 'Posted'))}</span></div>
+              <div className="col-span-2"><span className="font-medium">{t('fields.description','Description')}:</span> <span>{rec.description || '-'}</span></div>
+            </div>
+            <table className="w-full text-sm border">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="text-left p-2 border">{t('pages.receipts.items.instrumentType','Instrument')}</th>
+                  <th className="text-left p-2 border">{t('fields.refNo','Reference No.')}</th>
+                  <th className="text-left p-2 border">{t('pages.receipts.items.details','Details')}</th>
+                  <th className="text-right p-2 border">{t('pages.receipts.fields.amount','Amount')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(rec.items || []).map((it: any, idx: number) => {
+                  const typeLabelMap: Record<string, string> = {
+                    cash: t('common.cash','Cash'),
+                    transfer: t('common.transfer','Transfer'),
+                    card: t('common.card','Card'),
+                    check: t('common.check','Check'),
+                  };
+                  const type = String((it as any).instrumentType || '').toLowerCase();
+                  const instrLabel = typeLabelMap[String((it as any).instrumentType)] || t('pages.receipts.items.instrumentType','Instrument');
+                  // Prefer check_number for check items; otherwise fallback to provided reference fields
+                  let refRaw: string = (it as any).reference ?? (it as any).cardRef ?? (it as any).transferRef ?? '';
+                  if (type === 'check') {
+                    const chkId = (it as any).checkId ?? (it as any).check_id;
+                    const chk = (checks || []).find((c) => String(c.id) === String(chkId || ''));
+                    refRaw = (chk as any)?.check_number ?? (chk as any)?.number ?? refRaw;
+                  }
+                  const refDisp = isRTL ? toPersianDigits(String(refRaw || '')) : String(refRaw || '');
+                  const detailsText = renderItemDetails(it as ReceiptItem) || '';
+                  const detailsCell = type === 'cash' ? '' : detailsText;
+                  return (
+                    <tr key={idx}>
+                      <td className="p-2 border">{instrLabel}</td>
+                      <td className="p-2 border">{refDisp || '-'}</td>
+                      <td className="p-2 border">{detailsCell}</td>
+                      <td className="p-2 border text-right">{formatAmountForLocale(Number((it as any).amount || 0), lang)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td className="p-2 border font-semibold" colSpan={3}>{t('pages.receipts.total','Total')}</td>
+                  <td className="p-2 border text-right font-semibold">{formatAmountForLocale(total, lang)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </>
+        )}
+      </div>
+    );
   }
 
   return (

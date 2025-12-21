@@ -85,13 +85,14 @@ export interface AuthUser {
   role: 'user' | 'admin';
 }
 
-const jwtSecret = process.env.JWT_SECRET || 'dev-secret';
-
 /**
  * Require a valid JWT access token to proceed.
  * Attaches `{ mobileNumber, role }` to `req.user` when valid.
+ * Reads `JWT_SECRET` dynamically to reflect updated env files in dev.
+ * پیام‌های خطا به صورت انگلیسی/فارسی بر اساس سربرگ Accept-Language برگردانده می‌شوند.
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const jwtSecret = process.env.JWT_SECRET || 'dev-secret';
   const lang = (req as any).lang || getLang(req);
   const token = extractTokenFromRequest(req);
 

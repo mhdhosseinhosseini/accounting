@@ -14,7 +14,9 @@
     "seed": "ts-node src/scripts/seed.ts",
     "migrate": "ts-node src/scripts/migrate.ts",
     "migrate:pg": "DB_DRIVER=postgres ts-node src/scripts/migrate.ts",
+    "copy-schema": "ts-node src/scripts/copySchema.ts",
     "copy-db": "ts-node src/scripts/copyPostgres.ts",
+    "count-tables": "ts-node src/scripts/countTables.ts",
     "test:watch": "vitest"
   },
   "keywords": [],

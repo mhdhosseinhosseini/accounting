@@ -37,9 +37,10 @@ const detailLevels_1 = require("./routes/detailLevels");
 const treasury_1 = require("./routes/treasury");
 const settings_1 = __importDefault(require("./routes/settings"));
 // Load environment variables
-dotenv_1.default.config();
-// Also load overrides from .env.local if present
-dotenv_1.default.config({ path: '.env.local' });
+// Prefer local .env and .env.local to override any shell vars in dev.
+// This ensures DB URLs from .env files take precedence.
+dotenv_1.default.config({ override: true });
+dotenv_1.default.config({ path: '.env.local', override: true });
 // Parsed OpenAPI spec cache for debugging Swagger UI
 let openapiSpec = null;
 /**

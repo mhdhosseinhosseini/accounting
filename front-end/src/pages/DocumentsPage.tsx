@@ -24,6 +24,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import MultiSelect, { MultiSelectOption } from '../components/common/MultiSelect';
 import FormatListNumberedIcon from '@mui/icons-material/FormatListNumbered';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
+import ImageIcon from '@mui/icons-material/Image';
 
 interface FiscalYearRef { id: number; name: string; start_date: string; end_date: string; is_closed?: boolean; }
 
@@ -374,7 +375,22 @@ const DocumentsPage: React.FC = () => {
 
       const safeText = (s: string) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
 
-      const rowsHtml = items.map((it, idx) => {
+      // Order journal items to place Debitor (debit) rows first, then Creditor (credit) rows.
+      // Keeps original relative order within each group to avoid surprising re-sequencing.
+      const sortedItems = (Array.isArray(items) ? [...items] : []).sort((a, b) => {
+        const aDebit = Number(a?.debit || 0) > 0;
+        const bDebit = Number(b?.debit || 0) > 0;
+        const aCredit = Number(a?.credit || 0) > 0;
+        const bCredit = Number(b?.credit || 0) > 0;
+        if (aDebit && !bDebit) return -1; // debit first
+        if (!aDebit && bDebit) return 1;
+        // When both are debit or neither, keep order; if both are credit, keep order
+        if (aCredit && !bCredit) return 1; // credit after debit
+        if (!aCredit && bCredit) return -1;
+        return 0;
+      });
+
+      const rowsHtml = sortedItems.map((it, idx) => {
         const accountCodeRaw = String(it.account_code || '');
         const detailCodeRaw = String(it.detail_code || '');
         const accountTitleRaw = String(it.account_title || '');
@@ -574,6 +590,15 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
   }
 
   /**
+   * isProductionDocument
+   * Returns true when provider is 'production'.
+   */
+  function isProductionDocument(doc: DocumentListItem): boolean {
+    const p = String(doc.provider || '').trim().toLowerCase();
+    return p === 'production';
+  }
+
+  /**
    * canEditDocument
    * Disables Edit for 'permanent' documents and for treasury receipts.
    * Allows Edit for plain/content documents.
@@ -591,6 +616,7 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
   /**
    * canDeleteDocument
    * Enables Delete unless status is 'permanent'. Allows treasury receipts.
+   * Also enables Delete for provider 'production' as requested.
    */
   function canDeleteDocument(doc: DocumentListItem): boolean {
     const s = String(doc.status || '').trim().toLowerCase();
@@ -599,6 +625,7 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
     const t = String(doc.type || '').trim().toLowerCase();
     if (p === '' || p === 'content') return true;
     if (p === 'treasury' && t === 'receipt') return true;
+    if (p === 'production') return true; // FA: فعال‌سازی حذف برای ارائه‌دهنده «تولید»
     return false;
   }
 
@@ -784,7 +811,7 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
                             <EditIcon className="text-[20px]" />
                           </IconButton>
                           <IconButton onClick={() => { setDeleteTargetId(doc.id); setDeleteOpen(true); }} color="error" size="small" aria-label={t('actions.delete','Delete')} disabled={!canDeleteDocument(doc)}>
-                            {isTreasuryReceipt(doc) ? <ReceiptLongIcon className="text-[20px]" /> : <DeleteIcon className="text-[20px]" />}
+                            {isTreasuryReceipt(doc) ? <ReceiptLongIcon className="text-[20px]" /> : isProductionDocument(doc) ? <ImageIcon className="text-[20px]" /> : <DeleteIcon className="text-[20px]" />}
                           </IconButton>
                           <IconButton onClick={() => printDocument(doc.id)} color="default" size="small" aria-label={t('actions.print','Print')}>
                             <PrintIcon />
@@ -896,7 +923,9 @@ function formatType(type?: string): string {
       opening: 'افتتاحیه',
       closing: 'اختتامیه',
       adjustment: 'اصلاحی',
-      treasury: 'خزانه'
+      treasury: 'خزانه',
+      receiving: 'خرید',
+      sales: 'فروش'
     };
     return mapFa[raw] || (raw ? raw : 'عمومی');
   } else {
@@ -930,7 +959,8 @@ function formatProvider(provider?: string): string {
       purchase: 'خرید',
       warehouse: 'انبار',
       content: 'محتوا',
-      system: 'سیستم'
+      system: 'سیستم',
+      production: 'تولید'
     };
     return mapFa[raw] || (raw ? raw : 'حسابداری');
   } else {
@@ -942,7 +972,8 @@ function formatProvider(provider?: string): string {
       purchase: 'Purchase',
       warehouse: 'Warehouse',
       content: 'Content',
-      system: 'System'
+      system: 'System',
+      production: 'Production'
     };
     return mapEn[raw] || (raw ? raw : 'Accounting');
   }

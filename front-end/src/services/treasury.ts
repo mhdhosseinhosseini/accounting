@@ -47,6 +47,8 @@ export async function listCardReadersForAccount(bankAccountId: string): Promise<
  * - excludeReceiptId: include checks that are used in the specified receipt (edit mode)
  * - excludePaymentId: include checks that are used in the specified payment (edit mode)
  * - type: filter by direction ('incoming' | 'outgoing'), defaults to 'incoming'
+ * - status: filter by check status (e.g., 'incashbox' for incoming)
+ * - cashboxId: for incoming checks, filter by assigned cashbox
  *
  * For 'incoming', uses `/treasury/checks`.
  * For 'outgoing', aggregates across all checkbooks:
@@ -55,7 +57,7 @@ export async function listCardReadersForAccount(bankAccountId: string): Promise<
  *   - For each checkbook, list outgoing checks with optional filters
  *   - Augments each check with `bank_account_id` and `checkbook_id` for UI labeling
  */
-export async function listChecks(opts?: { available?: boolean; excludeReceiptId?: string | null; excludePaymentId?: string | null; type?: 'incoming' | 'outgoing' }): Promise<Check[]> {
+export async function listChecks(opts?: { available?: boolean; excludeReceiptId?: string | null; excludePaymentId?: string | null; type?: 'incoming' | 'outgoing'; status?: string; cashboxId?: string | null }): Promise<Check[]> {
   const lang = getCurrentLang();
   const type = (opts?.type || 'incoming');
 
@@ -64,6 +66,8 @@ export async function listChecks(opts?: { available?: boolean; excludeReceiptId?
     const params: Record<string, string> = { type: 'incoming' };
     if (opts?.available) params.available = 'true';
     if (opts?.excludeReceiptId) params.exclude_receipt_id = String(opts.excludeReceiptId);
+    if (opts?.status) params.status = String(opts.status);
+    if (opts?.cashboxId) params.cashbox_id = String(opts.cashboxId);
     const { data } = await axios.get(`${BASE}/checks`, {
       headers: { 'Accept-Language': lang },
       params,
