@@ -90,8 +90,8 @@ journalsRouter.get('/', async (req: Request, res: Response) => {
       status: z.union([z.enum(['temporary', 'permanent', 'draft']), z.array(z.enum(['temporary', 'permanent', 'draft'])), z.string()]).optional(),
       // NEW: type filter supports single, array, or comma-separated values
       type: z.union([z.string(), z.array(z.string())]).optional(),
-      // NEW: provider filter supports partial match via ILIKE
-      provider: z.string().optional(),
+      // NEW: provider filter supports single, array, or comma-separated values with OR semantics (ILIKE)
+      provider: z.union([z.string(), z.array(z.string())]).optional(),
       search: z.string().optional(),
       code_from: z.coerce.number().int().optional(),
       code_to: z.coerce.number().int().optional(),
@@ -128,8 +128,9 @@ journalsRouter.get('/', async (req: Request, res: Response) => {
     }
 
     if (fy_id) { params.push(fy_id); whereClauses.push(`j.fiscal_year_id = $${params.length}`); }
-    if (date_from) { params.push(date_from); whereClauses.push(`j.date >= $${params.length}`); }
-    if (date_to) { params.push(date_to); whereClauses.push(`j.date <= $${params.length}`); }
+    // Inclusive day boundaries: compare by date component to include the entire day
+    if (date_from) { params.push(date_from); whereClauses.push(`(j.date::date >= $${params.length}::date)`); }
+    if (date_to) { params.push(date_to); whereClauses.push(`(j.date::date <= $${params.length}::date)`); }
     if (statuses.length > 0) {
       const placeholders = statuses.map((_, i) => `$${params.length + i + 1}`).join(',');
       whereClauses.push(`j.status IN (${placeholders})`);
@@ -157,11 +158,21 @@ journalsRouter.get('/', async (req: Request, res: Response) => {
         whereClauses.push(`j.code ~ '^[0-9]+' AND CAST(j.code AS INT) <= $${params.length}`);
       }
     }
-    // NEW: apply provider partial match filter
-    const providerParam: string | undefined = (parsed.data as any).provider;
-    if (providerParam && providerParam.trim().length > 0) {
-      params.push(`%${providerParam.trim()}%`);
-      whereClauses.push(`j.provider ILIKE $${params.length}`);
+    // NEW: apply provider filter (OR semantics, supports array or comma-separated)
+    const providerRaw: any = (parsed.data as any).provider;
+    let providersFilter: string[] = [];
+    if (Array.isArray(providerRaw)) {
+      providersFilter = providerRaw.map((s) => String(s).trim()).filter(Boolean);
+    } else if (typeof providerRaw === 'string' && providerRaw.trim().length > 0) {
+      providersFilter = providerRaw.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    if (providersFilter.length > 0) {
+      const ors: string[] = [];
+      for (const v of providersFilter) {
+        params.push(`%${v}%`);
+        ors.push(`j.provider ILIKE $${params.length}`);
+      }
+      whereClauses.push(`(${ors.join(' OR ')})`);
     }
     if (search && search.trim().length > 0) {
       params.push(`%${search.trim()}%`);

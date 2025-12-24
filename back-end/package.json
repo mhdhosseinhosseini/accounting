@@ -17,6 +17,7 @@
     "copy-schema": "ts-node src/scripts/copySchema.ts",
     "copy-db": "ts-node src/scripts/copyPostgres.ts",
     "count-tables": "ts-node src/scripts/countTables.ts",
+    "apply:drop-legacy": "ts-node src/scripts/apply_drop_legacy_tables.ts",
     "test:watch": "vitest"
   },
   "keywords": [],

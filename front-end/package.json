@@ -37,7 +37,8 @@
     "react-toastify": "^11.0.5",
     "react-window": "^2.2.3",
     "stylis": "^4.3.6",
-    "stylis-plugin-rtl": "^2.1.1"
+    "stylis-plugin-rtl": "^2.1.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.16",

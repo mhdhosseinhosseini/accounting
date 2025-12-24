@@ -12,6 +12,8 @@ interface AlertDialogProps {
   dimBackground?: boolean;
   /** Optional override for backdrop class names (Tailwind). */
   backdropClassName?: string;
+  /** Optional alert type for future styling: error, info, success, warning. */
+  type?: 'error' | 'info' | 'success' | 'warning';
 }
 
 /**

@@ -582,12 +582,24 @@ const DocumentFormPage: React.FC = () => {
   /**
    * copyHeaderDescriptionToRow
    * Copies the top header description into the specified row's description.
-   * If the header description is blank, it leaves the row unchanged.
+   * Preserves all whitespace/formatting; skips when header is blank.
    */
   function copyHeaderDescriptionToRow(index: number): void {
-    const header = String(form.description || '').trim();
-    if (!header) return;
-    updateLine(index, { description: header });
+    const raw = String(form.description || '');
+    if (!raw.trim()) return;
+    updateLine(index, { description: raw });
+  }
+
+  /**
+   * copyPreviousRowDescriptionToRow
+   * Copies the description from the immediately preceding row into the current row.
+   * Preserves all whitespace and formatting; does nothing when previous is blank.
+   */
+  function copyPreviousRowDescriptionToRow(index: number): void {
+    if (index <= 0) return;
+    const prev = String(form.lines[index - 1]?.description || '');
+    if (!prev.trim()) return;
+    updateLine(index, { description: prev });
   }
 
   /**
@@ -940,7 +952,11 @@ const DocumentFormPage: React.FC = () => {
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && e.shiftKey) {
                               e.preventDefault();
-                              copyHeaderDescriptionToRow(idx);
+                              if (idx === 0) {
+                                copyHeaderDescriptionToRow(idx);
+                              } else {
+                                copyPreviousRowDescriptionToRow(idx);
+                              }
                               debitInputRefs.current[idx]?.focus();
                             } else if (e.key === 'Enter') {
                               e.preventDefault();

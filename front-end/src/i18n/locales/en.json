@@ -90,6 +90,7 @@
     "parties": "Parties",
     "warehouses": "Warehouses",
     "reports": "Reports",
+    "basicData": "Basic Data",
     "codes": "Codes",
     "fiscalYears": "Fiscal Years",
     "quickLinks": "Quick Links",
@@ -104,7 +105,9 @@
     "treasuryManageBanks": "Manage Banks",
     "treasuryChecks": "Manage Check",
     "treasuryReceipts": "Receipts",
-    "treasurySettings": "Settings"
+    "treasurySettings": "Settings",
+    "accountsReviewReport": "Accounts Review Report",
+    "hierarchicalCodesReport": "Hierarchical Codes Report"
   },
   "actions": {
     "reset": "Reset",
@@ -159,10 +162,40 @@
     },
     "reports": {
       "title": "Reports",
+      "hierarchical": { "title": "Hierarchical Debit/Credit Report" },
       "filters": "Filters",
+      "filtersPlaceholder": "Configure filters here (account range, date, etc.).",
+      "results": "Results",
+      "resultsPlaceholder": "Report results will appear here.",
+      "docFrom": "Doc From",
+      "docTo": "Doc To",
+      "search": "Search",
+      "exportPdf": "Export PDF",
+      "exportExcel": "Export Excel",
+      "tabs": {
+        "group": "Group",
+        "general": "Main",
+        "specific": "Special"
+      },
+      "startDate": "Start Date",
+      "endDate": "End Date",
+      "startAccount": "Start Account",
+      "endAccount": "End Account",
+      "table": {
+        "accountCode": "Account Code",
+        "accountName": "Account Name",
+        "openingBalance": "Opening Balance",
+        "debit": "Debit",
+        "credit": "Credit",
+        "closingBalance": "Closing Balance"
+      },
       "trialBalance": "Trial Balance",
       "balanceSheet": "Balance Sheet",
-      "profitLoss": "Profit & Loss"
+      "profitLoss": "Profit & Loss",
+      "groupNameFallback": "Group",
+      "generalNameFallback": "Main Code",
+      "specificNameFallback": "Special Code",
+      "detailNameFallback": "Detail"
     },
     "fiscalYears": {
       "title": "Fiscal Years",

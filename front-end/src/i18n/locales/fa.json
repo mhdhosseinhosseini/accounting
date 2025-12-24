@@ -90,6 +90,7 @@
     "parties": "طرف‌ها",
     "warehouses": "انبارها",
     "reports": "گزارش‌ها",
+    "basicData": "اطلاعات پایه",
     "codes": "کدها",
     "fiscalYears": "سال‌های مالی",
     "quickLinks": "میانبرها",
@@ -104,7 +105,9 @@
     "treasuryManageBanks": "مدیریت بانک‌ها",
     "treasuryChecks": "مدیریت چک",
     "treasuryReceipts": "دریافتی‌ها",
-    "treasurySettings": "تنظیمات"
+    "treasurySettings": "تنظیمات",
+    "accountsReviewReport": "گزارش مرور حساب‌ها",
+    "hierarchicalCodesReport": "گزارش کدهای درختی"
   },
   "actions": {
     "reset": "بازنشانی",
@@ -145,23 +148,45 @@
     "none": "هیچ",
     "feastWallYear": "سال دیوار جشن"
   },
-  "fields": {
-    "type": "نوع",
-    "provider": "ارائه‌دهنده",
-    "code": "کد",
-    "name": "نام",
-    "bankName": "نام بانک",
-    "title": "عنوان",
-    "isActive": "فعال",
-    "value": "مقدار"
-  },
   "pages": {
     "reports": {
       "title": "گزارش‌ها",
+      "hierarchical": { "title": "گزارش درختی بدهکار/بستانکار" },
       "filters": "فیلترها",
+      "filtersPlaceholder": "فیلترها را اینجا تنظیم کنید (محدوده حساب، تاریخ و ...).",
+      "results": "نتایج",
+      "resultsPlaceholder": "نتایج گزارش اینجا نمایش داده می‌شود.",
+      "docFrom": "از شماره سند",
+      "docTo": "تا شماره سند",
+      "search": "جستجو",
+      "exportPdf": "صدور PDF",
+      "exportExcel": "صدور Excel",
+      "tabs": {
+        "group": "گروه",
+        "general": "کل",
+        "specific": "معین"
+      },
+      "startDate": "تاریخ شروع",
+      "endDate": "تاریخ پایان",
+      "startAccount": "حساب شروع",
+      "endAccount": "حساب پایان",
+      "table": {
+        "accountCode": "کد حساب",
+        "accountName": "نام حساب",        
+        "detailCode": "کد تفصیلی",
+        "detailName": "نام تفصیلی",
+        "openingBalance": "مانده ابتدای دوره",
+        "debit": "بدهکار",
+        "credit": "بستانکار",
+        "closingBalance": "مانده پایان دوره"
+      },
       "trialBalance": "تراز آزمایشی",
       "balanceSheet": "ترازنامه",
-      "profitLoss": "سود و زیان"
+      "profitLoss": "سود و زیان",
+      "groupNameFallback": "گروه",
+      "generalNameFallback": "کل",
+      "specificNameFallback": "معین",
+      "detailNameFallback": "تفصیلی"
     },
     "fiscalYears": {
       "title": "سال‌های مالی",
@@ -497,8 +522,10 @@
      }
     },
   "fields": {
+
     "fromDate": "از تاریخ",
     "toDate": "تا تاریخ",
+    "dateRange": "محدوده تاریخ",
     "dateFrom": "تاریخ از",
     "dateTo": "تاریخ تا",
     "fiscalYear": "سال مالی",

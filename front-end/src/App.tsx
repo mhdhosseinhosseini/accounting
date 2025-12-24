@@ -10,9 +10,9 @@ import { useAuth } from './context/AuthContext';
 import { Home } from './pages/Home';
 import { LoginPage } from './pages/LoginPage';
 
-import JournalsPage from './pages/JournalsPage';
-import InvoicesPage from './pages/InvoicesPage';
-import WarehousesPage from './pages/WarehousesPage';
+// import JournalsPage from './pages/JournalsPage';
+// import InvoicesPage from './pages/InvoicesPage';
+// import WarehousesPage from './pages/WarehousesPage';
 import CashboxesPage from './pages/CashboxesPage';
 import CashboxFormPage from './pages/CashboxFormPage';
 // Consolidation: Banks routed to unified Manage Banks page
@@ -34,7 +34,14 @@ import ChecksPage from './pages/ChecksPage';
 import ReceiptFormPage from './pages/ReceiptFormPage';
 import PaymentFormPage from './pages/PaymentFormPage';
 import TreasurySettingsPage from './pages/TreasurySettingsPage';
+import AccountsReviewReportPage from './pages/AccountsReviewReportPage';
+import HierarchicalCodesReportPage from './pages/HierarchicalCodesReportPage';
+import JournalReportBuilderPage from './pages/JournalReportBuilderPage';
 
+/**
+ * Protected component wraps routes requiring authentication.
+ * If not authenticated, redirects user to the login page.
+ */
 function Protected({ children }: { children: React.ReactElement }) {
   const { isAuthenticated } = useAuth();
   return isAuthenticated ? children : <Navigate to="/login" replace />;
@@ -62,11 +69,11 @@ export default function App() {
       <Route path="/codes" element={<Protected><CodesPage /></Protected>} />
       <Route path="/details" element={<Protected><DetailsPage /></Protected>} />
       <Route path="/detail-levels" element={<Protected><DetailLevelsPage /></Protected>} />
-      <Route path="/journals" element={<Protected><JournalsPage /></Protected>} />
-      <Route path="/invoices" element={<Protected><InvoicesPage /></Protected>} />
-      {/* Removed Parties page and route; use Details instead for payer management */}
+      {/* Removed routes per request: Journals, Invoices, Warehouses */}
+      {/* <Route path="/journals" element={<Protected><JournalsPage /></Protected>} /> */}
+      {/* <Route path="/invoices" element={<Protected><InvoicesPage /></Protected>} /> */}
+      {/* <Route path="/warehouses" element={<Protected><WarehousesPage /></Protected>} /> */}
       {/* <Route path="/parties" element={<Protected><PartiesPage /></Protected>} /> */}
-      <Route path="/warehouses" element={<Protected><WarehousesPage /></Protected>} />
       <Route path="/treasury/cashboxes" element={<Protected><CashboxesPage /></Protected>} />
       <Route path="/treasury/cashboxes/new" element={<Protected><CashboxFormPage /></Protected>} />
       <Route path="/treasury/cashboxes/edit" element={<Protected><CashboxFormPage /></Protected>} />
@@ -86,6 +93,9 @@ export default function App() {
       <Route path="/treasury/payments" element={<Protected><TreasuryPaymentsPage /></Protected>} />
       <Route path="/treasury/payments/new" element={<Protected><PaymentFormPage /></Protected>} />
       <Route path="/treasury/payments/:id" element={<Protected><PaymentFormPage /></Protected>} />
+      <Route path="/reports/accounts-review" element={<Protected><AccountsReviewReportPage /></Protected>} />
+      <Route path="/reports/hierarchical-codes" element={<Protected><HierarchicalCodesReportPage /></Protected>} />
+      <Route path="/reports/journal-builder" element={<Protected><JournalReportBuilderPage /></Protected>} />
       {/* Removed /reports route while rebuilding reports from scratch */}
       {/* <Route path="/reports" element={<Protected><ReportsPage /></Protected>} /> */}
       <Route path="/fiscal-years" element={<Protected><FiscalYearsPage /></Protected>} />

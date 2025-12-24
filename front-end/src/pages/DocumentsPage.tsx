@@ -12,6 +12,7 @@ import JalaliDateRangePicker from '../components/common/JalaliDateRangePicker';
 import DateObject from 'react-date-object';
 import persian from 'react-date-object/calendars/persian';
 import { getCurrentLang } from '../i18n';
+import { openJournalDailyPrintByIds, openJournalDailyPrintByFilter } from '../print/journalDaily';
 import TableSortHeader from '../components/common/TableSortHeader';
 import Pagination from '../components/common/Pagination';
 import ConfirmDialog from '../components/common/ConfirmDialog';
@@ -19,12 +20,14 @@ import { useNavigate } from 'react-router-dom';
 import { FormControl, IconButton, InputLabel, MenuItem, Select, TextField, Tooltip } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import MenuBookIcon from '@mui/icons-material/MenuBook';
 import PrintIcon from '@mui/icons-material/Print';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import MultiSelect, { MultiSelectOption } from '../components/common/MultiSelect';
 import FormatListNumberedIcon from '@mui/icons-material/FormatListNumbered';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import ImageIcon from '@mui/icons-material/Image';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
 
 interface FiscalYearRef { id: number; name: string; start_date: string; end_date: string; is_closed?: boolean; }
 
@@ -50,7 +53,7 @@ const DocumentsPage: React.FC = () => {
   const [dateTo, setDateTo] = useState<string>('');
   const [types, setTypes] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
-  const [provider, setProvider] = useState<string>('');
+  const [providers, setProviders] = useState<string[]>([]);
   const [search, setSearch] = useState<string>('');
   const [fromDate, setFromDate] = useState<Date | null>(null);
   const [toDate, setToDate] = useState<Date | null>(null);
@@ -67,6 +70,7 @@ const DocumentsPage: React.FC = () => {
   const [page, setPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
   const [total, setTotal] = useState<number>(0);
+  // Selection removed: printing uses currently visible filtered rows
 
   const isRTL = getCurrentLang() === 'fa';
 
@@ -245,7 +249,7 @@ const DocumentsPage: React.FC = () => {
     // Support multi-select values for type and status (comma-separated)
     if (types && types.length > 0) q.type = types.join(',');
     if (statuses && statuses.length > 0) q.status = statuses.join(',');
-    if (provider) q.provider = provider;
+    if (providers && providers.length > 0) q.provider = providers.join(',');
     const range = parseCodeRangeFromSearch(search);
     if (range.code_from != null) q.code_from = range.code_from;
     if (range.code_to != null) q.code_to = range.code_to;
@@ -505,9 +509,54 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
     }
   }
 
+  /**
+   * getActiveFiltersTokens
+   * Builds a list of active filter tokens to show on the print header.
+   */
+  function getActiveFiltersTokens(): string[] {
+    const tokens: string[] = [];
+    const rtl = getCurrentLang() === 'fa';
+    if (fyId) {
+      const fy = fiscalYears.find((f) => String(f.id) === fyId);
+      if (fy) tokens.push(`${rtl ? 'سال مالی' : 'Fiscal Year'}: ${fy.name}`);
+    }
+    if (types.length > 0) {
+      const v = types.map((x) => formatType(x)).join(rtl ? '، ' : ', ');
+      tokens.push(`${rtl ? 'نوع' : 'Type'}: ${v}`);
+    }
+    if (statuses.length > 0) {
+      const v = statuses.map((x) => formatStatus(x)).join(rtl ? '، ' : ', ');
+      tokens.push(`${rtl ? 'وضعیت' : 'Status'}: ${v}`);
+    }
+    if (providers.length > 0) {
+      const v = providers.map((x) => formatProvider(x)).join(rtl ? '، ' : ', ');
+      tokens.push(`${rtl ? 'ارائه‌دهنده' : 'Provider'}: ${v}`);
+    }
+    if (search.trim()) {
+      tokens.push(`${rtl ? 'جستجو' : 'Search'}: ${search.trim()}`);
+    }
+    return tokens;
+  }
+
+  /**
+   * handlePrintWithFilters
+   * Prints all documents matching current filters.
+   */
+  async function handlePrintWithFilters(): Promise<void> {
+    try {
+      const params = buildQueryParams();
+      // Remove pagination params to fetch all
+      const { page, page_size, ...filterParams } = params;
+      await openJournalDailyPrintByFilter(filterParams, { dateFrom, dateTo, filters: getActiveFiltersTokens() });
+    } catch (e) {
+      setError(t('pages.documents.printFailed', getCurrentLang() === 'fa' ? 'نمایش چاپ سند ناموفق بود' : 'Failed to open print view'));
+    }
+  }
+
   // Initial loads and reactive fetching
   useEffect(() => { fetchFiscalYears(); }, []);
-  useEffect(() => { fetchDocuments(); }, [fyId, dateFrom, dateTo, types, statuses, provider, search, sortBy, sortDir, page, pageSize]);
+  useEffect(() => { fetchDocuments(); }, [fyId, dateFrom, dateTo, types, statuses, providers, search, sortBy, sortDir, page, pageSize]);
+  useEffect(() => { if (fyId != null) { fetchDistinctFieldOptions('provider'); fetchDistinctFieldOptions('type'); } }, [fyId]);
 
   // Compute current fy label
   const fyLabel = useMemo(() => {
@@ -523,9 +572,42 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
     { value: 'permanent', label: t('status.permanent', isRTL ? 'دائمی' : 'Permanent') },
   ]), [isRTL, t]);
 
-  const typeOptions: MultiSelectOption[] = useMemo(() => ([
-    { value: 'general', label: t('types.general', isRTL ? 'عمومی' : 'General') },
-  ]), [isRTL, t]);
+  const [typeOptions, setTypeOptions] = useState<MultiSelectOption[]>([]);
+  const [providerOptions, setProviderOptions] = useState<MultiSelectOption[]>([]);
+
+  /**
+   * fetchDistinctFieldOptions
+   * Loads distinct values for a journal field ('provider' | 'type') via paginated queries
+   * and updates the options for corresponding multi-selects.
+   */
+  async function fetchDistinctFieldOptions(field: 'provider' | 'type'): Promise<void> {
+    try {
+      const pageSize = 100;
+      const seen = new Set<string>();
+      let pageIdx = 1;
+      for (let guard = 0; guard < 200; guard++) {
+        const params: any = { sort_by: 'date', sort_dir: 'desc', page: pageIdx, page_size: pageSize };
+        if (fyId != null) params.fy_id = fyId;
+        const res = await axios.get(`${config.API_ENDPOINTS.base}/v1/journals`, { params, headers: { 'Accept-Language': getCurrentLang() } });
+        const payload = res.data;
+        const list: any[] = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
+        for (const row of list) {
+          const val = String(row?.[field] || '').trim();
+          if (val) seen.add(val);
+        }
+        if (list.length < pageSize) break;
+        pageIdx += 1;
+      }
+      const opts: MultiSelectOption[] = Array.from(seen).sort().map((v) => ({
+        value: v,
+        label: field === 'provider' ? formatProvider(v) : formatType(v),
+      }));
+      if (field === 'provider') setProviderOptions(opts);
+      else setTypeOptions(opts);
+    } catch {
+      // Non-blocking
+    }
+  }
 
   /**
    * handleReorderCodes
@@ -563,6 +645,7 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
       if (range.code_to != null) body.code_to = range.code_to;
       if (search && range.code_from == null && range.code_to == null) body.search = search;
       if (statuses && statuses.length > 0) body.status = statuses.join(',');
+      if (providers && providers.length > 0) body.provider = providers.join(',');
       await axios.post(`${config.API_ENDPOINTS.base}/v1/journals/bulk-post`, body, { headers: { 'Accept-Language': getCurrentLang() } });
       await fetchDocuments();
     } catch (e) {
@@ -587,6 +670,16 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
     const p = String(doc.provider || '').trim().toLowerCase();
     const t = String(doc.type || '').trim().toLowerCase();
     return p === 'treasury' && t === 'receipt';
+  }
+
+  /**
+   * isTreasuryPayment
+   * Returns true when provider is 'treasury' and type is 'payment'.
+   */
+  function isTreasuryPayment(doc: DocumentListItem): boolean {
+    const p = String(doc.provider || '').trim().toLowerCase();
+    const t = String(doc.type || '').trim().toLowerCase();
+    return p === 'treasury' && t === 'payment';
   }
 
   /**
@@ -625,6 +718,7 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
     const t = String(doc.type || '').trim().toLowerCase();
     if (p === '' || p === 'content') return true;
     if (p === 'treasury' && t === 'receipt') return true;
+    if (p === 'treasury' && t === 'payment') return true;
     if (p === 'production') return true; // FA: فعال‌سازی حذف برای ارائه‌دهنده «تولید»
     return false;
   }
@@ -663,6 +757,9 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
     if (doc && isTreasuryReceipt(doc)) {
       return t('pages.documents.deleteConfirmReceiptOrigin', isRTL ? 'این سند از دریافتی خزانه‌داری ایجاد شده است. با حذف آن، وضعیت دریافتی «موقت» می‌شود و ارتباطش حذف خواهد شد.' : 'This document comes from a Treasury receipt. Deleting it will make the receipt temporary and remove its link.');
     }
+    if (doc && isTreasuryPayment(doc)) {
+      return t('pages.documents.deleteConfirmPaymentOrigin', isRTL ? 'این سند از پرداخت خزانه‌داری ایجاد شده است. با حذف آن، وضعیت پرداخت «پیش‌نویس» می‌شود و ارتباطش حذف خواهد شد.' : 'This document comes from a Treasury payment. Deleting it will make the payment draft and remove its link.');
+    }
     return t('pages.documents.deleteConfirm', isRTL ? 'این سند موقت حذف شود؟' : 'Delete this temporary document?');
   }
 
@@ -682,6 +779,7 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
               <button className="bg-green-700 text-white rounded px-4 py-2" onClick={() => navigate('/documents/new')}>
                 {t('actions.new', 'New')}
               </button>
+              
              </>
          </div>
 
@@ -693,70 +791,111 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
           {/* Row: Reorder icon only + filters, RTL-aware placement */}
           <div>
            <div className={getFilterRowClass()}>
-                        <Tooltip title={t('actions.renumbering')} arrow>
-              <IconButton onClick={openRenumberConfirm} color="primary" size="medium" aria-label={t('actions.reorderCodes', isRTL ? 'مرتب‌سازی کدها' : 'Reorder codes')}>
+            <Tooltip title={t('actions.renumbering')} arrow>
+              <IconButton onClick={openRenumberConfirm} color="primary" size="medium" aria-label={t('actions.reorderCodes', isRTL ? 'مرتب‌سازی کدها' : 'Reorder codes')} className="hover:bg-gray-100">
                 <FormatListNumberedIcon />
               </IconButton>
             </Tooltip>
-               {/* Compact filters */}
-               <div className="w-100">
-                 <MultiSelect
-                   label={t('fields.status', 'Status')}
-                   value={statuses}
-                   onChange={setStatuses}
-                   options={statusOptions}
-                   minWidth={200}
-                   size="small"
-                 />
-               </div>
-               <div className="w-50">
-                 <MultiSelect
-                   label={t('fields.type', 'Type')}
-                   value={types}
-                   onChange={setTypes}
-                   options={typeOptions}
-                   minWidth={200}
-                   size="small"
-                 />
-               </div>
-               <div className="w-50">
-                 <TextField
-                   label={t('fields.provider', 'Provider')}
-                   variant="outlined"
-                   size="small"
-                   fullWidth
-                   value={provider}
-                   onChange={(e) => setProvider(e.target.value)}
-                 />
-               </div>
-               {/* Search: wider by taking remaining space */}
-               <div className="flex-1 min-w-[280px]">
-                 <TextField
-                   label={t('fields.search', 'Search')}
-                   variant="outlined"
-                   size="small"
-                   fullWidth
-                   value={search}
-                   onChange={(e) => setSearch(e.target.value)}
-                   placeholder={t('pages.documents.searchPlaceholder', 'Search header and lines')}
-                   helperText={t('pages.documents.searchRangeHint')}
-                 />
-               </div>
-             </div>
-           </div>
+            {/* Print button relocated here */}
+              <Tooltip title={isRTL ? 'دفتر روزنامه' : 'Journal Notebook'} arrow>
+                <IconButton
+                  onClick={handlePrintWithFilters}
+                  color="info"
+                  size="medium"
+                  aria-label={t('pages.documents.printSelected', isRTL ? 'چاپ روزنامه' : 'Print Journal')}
+                  className="hover:bg-gray-100"
+                >
+                  <MenuBookIcon />
+                </IconButton>
+              </Tooltip>
+              {/* Reset filters */}
+              <Tooltip title={isRTL ? 'بازنشانی فیلترها' : 'Reset Filters'} arrow>
+                <IconButton
+                  onClick={() => {
+                    setTypes([]);
+                    setStatuses([]);
+                    setProviders([]);
+                    setSearch('');
+                    setFromDate(null);
+                    setToDate(null);
+                    setDateFrom('');
+                    setDateTo('');
+                    setSortBy('date');
+                    setSortDir('desc');
+                    setPage(1);
+                    fetchDocuments();
+                  }}
+                  color="secondary"
+                  size="medium"
+                  aria-label={isRTL ? 'بازنشانی فیلترها' : 'Reset Filters'}
+                  className="hover:bg-gray-100"
+                >
+                  <AutorenewIcon />
+                </IconButton>
+              </Tooltip>
+             {/* Compact filters */}
+              <div className="w-100">
+                <MultiSelect
+                  label={t('fields.status', 'Status')}
+                  value={statuses}
+                  onChange={setStatuses}
+                  options={statusOptions}
+                  minWidth={200}
+                  size="small"
+                />
+              </div>
+              <div className="w-50">
+                <MultiSelect
+                  label={t('fields.type', 'Type')}
+                  value={types}
+                  onChange={setTypes}
+                  options={typeOptions}
+                  minWidth={200}
+                  size="small"
+                />
+              </div>
+              <div className="w-50">
+                <MultiSelect
+                  label={t('fields.provider', 'Provider')}
+                  value={providers}
+                  onChange={setProviders}
+                  options={providerOptions}
+                  minWidth={200}
+                  size="small"
+                />
+              </div>
+              {/* Search: wider by taking remaining space */}
+              <div className="flex-1 min-w-[280px]">
+                <TextField
+                  label={t('fields.search', 'Search')}
+                  variant="outlined"
+                  size="small"
+                  fullWidth
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('pages.documents.searchPlaceholder', 'Search header and lines')}
+                  helperText={t('pages.documents.searchRangeHint')}
+                />
+              </div>
+            </div>
+          </div>
  
            {/* Date range below with reduced width */}
            <div className={getDateRangeWrapperClass()}>
-             <label className="block text-sm mb-1">{t('fields.dateRange', 'Date Range')}</label>
-             <JalaliDateRangePicker
-               fromDate={fromDate}
-               toDate={toDate}
-               onFromDateChange={(d) => { setFromDate(d); setDateFrom(d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : ''); }}
-               onToDateChange={(d) => { setToDate(d); setDateTo(d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : ''); }}
-               onApply={() => { fetchDocuments(); }}
-               includeTime={false}
-             />
-           </div>
+           <label className="block text-sm mb-1">{t('fields.dateRange', 'Date Range')}</label>
+            <JalaliDateRangePicker
+              fromDate={fromDate}
+              toDate={toDate}
+              onFromDateChange={(d) => { setFromDate(d); setDateFrom(d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : ''); }}
+              onToDateChange={(d) => { setToDate(d); setDateTo(d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : ''); }}
+              onApply={() => { fetchDocuments(); }}
+              includeTime={false}
+            />
+            <div className="text-xs text-gray-600 mt-1">
+              {t('pages.documents.activeDateRange', isRTL ? 'بازه فعال:' : 'Active range:')}{' '}
+              {dateFrom ? formatDisplayDate(dateFrom) : (isRTL ? 'نامشخص' : 'Unknown')} {isRTL ? 'تا' : '→'} {dateTo ? formatDisplayDate(dateTo) : (isRTL ? 'نامشخص' : 'Unknown')}
+            </div>
+          </div>
          </section>
 
         {/* List table */}
@@ -776,6 +915,8 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
                 </colgroup>
                  <thead className="bg-gray-100" dir={isRTL ? 'rtl' : 'ltr'}>
                   <tr className="border-b border-gray-200">
+                   {/* Checkbox column removed */}
+
                     <TableSortHeader label={t('fields.documentCode', 'Document Code')} sortKey={'code'} currentSortBy={sortBy as any} currentSortDir={sortDir} onSort={(k) => handleSort(k as string)} headerAlign={isRTL ? 'text-left' : 'text-right'} />
                      <TableSortHeader label={t('fields.date', 'Date')} sortKey={'date'} currentSortBy={sortBy as any} currentSortDir={sortDir} onSort={(k) => handleSort(k as string)} headerAlign={isRTL ? 'text-left' : 'text-right'} />
                      <TableSortHeader label={t('fields.type', 'Type')} sortKey={'type'} currentSortBy={sortBy as any} currentSortDir={sortDir} onSort={(k) => handleSort(k as string)} headerAlign={isRTL ? 'text-left' : 'text-right'} />
@@ -783,22 +924,22 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
                      <TableSortHeader label={t('fields.description', 'Description')} sortKey={'description'} currentSortBy={sortBy as any} currentSortDir={sortDir} onSort={(k) => handleSort(k as string)} headerAlign={isRTL ? 'text-left' : 'text-right'} />
                      <TableSortHeader label={t('fields.status', 'Status')} sortKey={'status'} currentSortBy={sortBy as any} currentSortDir={sortDir} onSort={(k) => handleSort(k as string)} headerAlign={isRTL ? 'text-left' : 'text-right'} />
                      <TableSortHeader label={t('fields.total', 'Total')} sortKey={'total'} currentSortBy={sortBy as any} currentSortDir={sortDir} onSort={(k) => handleSort(k as string)} headerAlign={isRTL ? 'text-left' : 'text-right'} />
-                     <th className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'}`}>
-                       <div className="flex items-center gap-2">
-                         {t('actions.actions', isRTL ? 'عملیات' : 'Actions')}
-                         <Tooltip title={t('actions.postFiltered')} arrow>
-                           <IconButton onClick={openBulkPostConfirm} color="success" size="small" aria-label={t('actions.postFiltered', isRTL ? 'ارسال گروهی' : 'Post filtered')}>
-                              <CheckCircleIcon />
+                    <th className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'}`}>
+                      <div className="flex items-center gap-2">
+                        {t('actions.actions', isRTL ? 'عملیات' : 'Actions')}
+                        <Tooltip title={t('actions.postFiltered')} arrow>
+                          <IconButton onClick={openBulkPostConfirm} color="success" size="small" aria-label={t('actions.postFiltered', isRTL ? 'ارسال گروهی' : 'Post filtered')} className="hover:bg-gray-100">
+                             <CheckCircleIcon />
                             </IconButton>
                          </Tooltip>
-                       </div>
-                     </th>
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((doc) => (
                     <tr key={doc.id} className={`border-b border-gray-200 hover:bg-gray-50 ${doc.status === 'draft' ? 'bg-red-50' : ''}`}>
-                      <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'}`}>{getCurrentLang() === 'fa' ? toPersianDigits(String(doc.code ?? '')) : doc.code}</td>
+                      <td className={`py-2 px-1 ${isRTL ? 'text-right' : 'text-left'}`}>{getCurrentLang() === 'fa' ? toPersianDigits(String(doc.code ?? '')) : doc.code}</td>
                       <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'}`}>{formatDisplayDate(doc.date)}</td>
                       <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'} truncate`}>{formatType(doc.type)}</td>
                       <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'} truncate`}>{formatProvider(doc.provider)}</td>
@@ -806,18 +947,20 @@ ${rtl ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=V
                       <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'} truncate`}>{formatStatus(doc.status)}</td>
                       <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'}`}>{formatAmountNoDecimals(doc.total ?? 0)}</td>
                       <td className={`py-2 px-2 ${isRTL ? 'text-right' : 'text-left'}`}>
-                        <div className="flex flex-wrap gap-1">
-                          <IconButton onClick={() => navigate(`/documents/new?id=${doc.id}`)} color="primary" size="small" aria-label={t('actions.edit','Edit')} disabled={!canEditDocument(doc)}>
-                            <EditIcon className="text-[20px]" />
+                        <div className="flex gap-1 items-center whitespace-nowrap">
+                          <IconButton onClick={() => navigate(`/documents/new?id=${doc.id}`)} color="primary" size="medium" aria-label={t('actions.edit','Edit')} disabled={!canEditDocument(doc)} className="hover:bg-gray-100">
+                            <EditIcon className="text-[22px]" />
                           </IconButton>
-                          <IconButton onClick={() => { setDeleteTargetId(doc.id); setDeleteOpen(true); }} color="error" size="small" aria-label={t('actions.delete','Delete')} disabled={!canDeleteDocument(doc)}>
-                            {isTreasuryReceipt(doc) ? <ReceiptLongIcon className="text-[20px]" /> : isProductionDocument(doc) ? <ImageIcon className="text-[20px]" /> : <DeleteIcon className="text-[20px]" />}
+                          <IconButton onClick={() => { setDeleteTargetId(doc.id); setDeleteOpen(true); }} color="error" size="medium" aria-label={t('actions.delete','Delete')} disabled={!canDeleteDocument(doc)} className="hover:bg-gray-100">
+                            {isTreasuryReceipt(doc) || isTreasuryPayment(doc) ? <ReceiptLongIcon className="text-[22px]" /> : isProductionDocument(doc) ? <ImageIcon className="text-[22px]" /> : <DeleteIcon className="text-[22px]" />}
                           </IconButton>
-                          <IconButton onClick={() => printDocument(doc.id)} color="default" size="small" aria-label={t('actions.print','Print')}>
-                            <PrintIcon />
-                          </IconButton>
-                          <IconButton onClick={() => confirmDocument(doc.id)} color="success" size="small" disabled={doc.status !== 'temporary'} aria-label={t('actions.confirm','Confirm')}>
-                            <CheckCircleIcon />
+                          <Tooltip title={t('actions.print','Print')} arrow>
+                            <IconButton onClick={() => printDocument(doc.id)} color="default" size="medium" aria-label={t('actions.print','Print')} className="hover:bg-gray-100">
+                              <PrintIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <IconButton onClick={() => confirmDocument(doc.id)} color="success" size="medium" disabled={doc.status !== 'temporary'} aria-label={t('actions.confirm','Confirm')} className="hover:bg-gray-100">
+                            <CheckCircleIcon className="text-[22px]" />
                           </IconButton>
                         </div>
                       </td>
@@ -903,7 +1046,7 @@ function getDateRangeWrapperClass(): string {
  * Works for both LTR and RTL (including Farsi) using fixed table layout.
  */
 function getColumnWidths(): number[] {
-  return [10, 8, 10, 10, 32, 8, 12, 10];
+  return [8, 8, 10, 10, 34, 8, 10, 12];
 }
 
 

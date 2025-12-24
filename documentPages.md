@@ -4,7 +4,7 @@ Pages
   
   - Table lists header fields and quick line summaries (count, top accounts).
   - Per-row actions: Edit , Delete , Print , Confirm .
-  - Global action: New Document to open data entry form.
+  - Global action: New Document to open data entry form; Print Journal to print filtered list.
   - Row expand/drawer shows full journal lines without leaving list.
 - Document Entry
   

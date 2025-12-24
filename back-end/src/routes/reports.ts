@@ -215,7 +215,7 @@ reportsRouter.get('/journals-pivot-raw', async (req: Request, res: Response) => 
       case 'journal_code':
         return `COALESCE(j.code::text, '-')`;
       case 'account_code':
-        return `COALESCE(a.code::text, '-')`;
+        return `COALESCE(c.code::text, '-')`;
       case 'detail_code':
         return `COALESCE(d.code::text, '-')`;
       default:
@@ -229,21 +229,30 @@ reportsRouter.get('/journals-pivot-raw', async (req: Request, res: Response) => 
                ${getDimExpr(col_dim)} AS col_key,
                ji.debit::numeric AS debit,
                ji.credit::numeric AS credit,
+               COALESCE(ji.description, NULL) AS description,
                j.id AS journal_id,
                to_char(j.date, 'YYYY-MM-DD') AS date,
                COALESCE(j.code, NULL) AS journal_code,
-               COALESCE(a.code, NULL) AS account_code,
+               COALESCE(c.code, NULL) AS account_code,
                COALESCE(d.code, NULL) AS detail_code
              FROM journal_items ji
              JOIN journals j ON j.id = ji.journal_id
-             JOIN accounts a ON a.id = ji.account_id
+             JOIN codes c ON c.id = ji.code_id
              LEFT JOIN details d ON d.id = ji.detail_id
              WHERE j.fiscal_year_id = $1`;
   const params: any[] = [fiscal_year_id];
 
-  // Status filter: default permanent only
-  if (status !== 'all') {
-    sql += ` AND j.status = 'permanent'`;
+  // Status filter: support 'all' or a specific journal status
+  const allowedStatuses = new Set(['permanent', 'temporary', 'draft']);
+  if (status && status !== 'all') {
+    const normalized = String(status).toLowerCase();
+    if (allowedStatuses.has(normalized)) {
+      sql += ` AND j.status = $${params.length + 1}`;
+      params.push(normalized);
+    } else {
+      // Fallback to permanent if an unknown status is provided
+      sql += ` AND j.status = 'permanent'`;
+    }
   }
 
   // Date range filter
@@ -272,13 +281,13 @@ reportsRouter.get('/journals-pivot-raw', async (req: Request, res: Response) => 
 
   // Account code range filter
   if (account_code_from != null && account_code_to != null) {
-    sql += ` AND a.code BETWEEN $${params.length + 1} AND $${params.length + 2}`;
+    sql += ` AND c.code BETWEEN $${params.length + 1} AND $${params.length + 2}`;
     params.push(account_code_from, account_code_to);
   } else if (account_code_from != null) {
-    sql += ` AND a.code >= $${params.length + 1}`;
+    sql += ` AND c.code >= $${params.length + 1}`;
     params.push(account_code_from);
   } else if (account_code_to != null) {
-    sql += ` AND a.code <= $${params.length + 1}`;
+    sql += ` AND c.code <= $${params.length + 1}`;
     params.push(account_code_to);
   }
 

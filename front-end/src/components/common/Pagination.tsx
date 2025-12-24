@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight } from 'lucide-react';
 
 /**
  * Props interface for the Pagination component
@@ -82,6 +83,24 @@ const Pagination: React.FC<PaginationProps> = ({
     }
   };
 
+  /**
+   * Navigate to the first page
+   */
+  const handleFirstPage = () => {
+    if (page > 1) {
+      onPageChange(1);
+    }
+  };
+
+  /**
+   * Navigate to the last page
+   */
+  const handleLastPage = () => {
+    if (page < totalPages) {
+      onPageChange(totalPages);
+    }
+  };
+
   return (
     <div className={`mt-4 flex items-center justify-between ${className}`}>
       <div className="flex items-center space-x-4">
@@ -113,11 +132,22 @@ const Pagination: React.FC<PaginationProps> = ({
       
       <div className="flex items-center space-x-2">
         <button
+          onClick={handleFirstPage}
+          disabled={page <= 1}
+          className="px-2 py-1 rounded border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          title={isFa ? 'صفحه اول' : 'First page'}
+          aria-label={isFa ? 'صفحه اول' : 'First page'}
+        >
+          {isFa ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+        </button>
+        <button
           onClick={handlePreviousPage}
           disabled={page <= 1}
-          className="px-3 py-1 rounded border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          className="px-2 py-1 rounded border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          title={isFa ? 'قبلی' : 'Previous'}
+          aria-label={isFa ? 'قبلی' : 'Previous'}
         >
-          {isFa ? 'قبلی' : 'Previous'}
+          {isFa ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
         
         <div className="flex items-center space-x-1">
@@ -153,9 +183,20 @@ const Pagination: React.FC<PaginationProps> = ({
         <button
           onClick={handleNextPage}
           disabled={page >= totalPages}
-          className="px-3 py-1 rounded border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          className="px-2 py-1 rounded border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          title={isFa ? 'بعدی' : 'Next'}
+          aria-label={isFa ? 'بعدی' : 'Next'}
         >
-          {isFa ? 'بعدی' : 'Next'}
+          {isFa ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
+        <button
+          onClick={handleLastPage}
+          disabled={page >= totalPages}
+          className="px-2 py-1 rounded border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          title={isFa ? 'صفحه آخر' : 'Last page'}
+          aria-label={isFa ? 'صفحه آخر' : 'Last page'}
+        >
+          {isFa ? <ChevronsLeft className="h-4 w-4" /> : <ChevronsRight className="h-4 w-4" />}
         </button>
       </div>
     </div>
